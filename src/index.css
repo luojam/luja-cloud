@@ -128,3 +128,12 @@
         @apply font-sans;
     }
 }
+
+/* Keep Chromium autofill consistent with Clerk's dark input theme. */
+.cl-formFieldInput:-webkit-autofill,
+.cl-formFieldInput:-webkit-autofill:hover,
+.cl-formFieldInput:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--foreground) !important;
+    caret-color: var(--foreground);
+    transition: background-color 9999s ease-out;
+}

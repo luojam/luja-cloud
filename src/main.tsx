@@ -1,5 +1,6 @@
 import './index.css';
 import { ClerkProvider } from '@clerk/react';
+import { dark } from '@clerk/ui/themes';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { StrictMode } from 'react';
@@ -16,7 +17,11 @@ const queryClient = new QueryClient();
 
 createRoot(document.getElementById('root')!).render(
     <StrictMode>
-        <ClerkProvider publishableKey={clerkPublishableKey} afterSignOutUrl='/'>
+        <ClerkProvider
+            publishableKey={clerkPublishableKey}
+            afterSignOutUrl='/'
+            appearance={{ theme: dark }}
+        >
             <QueryClientProvider client={queryClient}>
                 <RouterProvider router={router} />
             </QueryClientProvider>
