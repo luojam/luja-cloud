@@ -1,0 +1,7 @@
+.agents
+dist
+coverage
+node_modules
+package-lock.json
+skills-lock.json
+src/routeTree.gen.ts
