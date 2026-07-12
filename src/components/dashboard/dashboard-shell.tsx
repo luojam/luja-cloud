@@ -1,8 +1,9 @@
 import { UserButton, useUser } from '@clerk/react';
-import { MoreVerticalIcon } from '@hugeicons/core-free-icons';
+import { FileUploadIcon, MoreVerticalIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import type { ReactNode } from 'react';
 
+import { Button } from '@/components/ui/button';
 import {
     Sidebar,
     SidebarContent,
@@ -14,6 +15,7 @@ import {
     SidebarMenu,
     SidebarMenuItem,
     SidebarProvider,
+    SidebarSeparator,
     SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -37,17 +39,30 @@ function DashboardSidebar() {
             <SidebarHeader>
                 <div className='flex h-8 items-center justify-between gap-2 group-data-[collapsible=icon]:justify-center'>
                     <span className='truncate px-2 text-sm font-semibold group-data-[collapsible=icon]:hidden'>
-                        Luja Cloud
+                        luja Cloud
                     </span>
                     <SidebarTrigger size='icon-lg' />
                 </div>
             </SidebarHeader>
-            <SidebarContent>
+            <SidebarSeparator className='data-horizontal:w-[calc(100%-1rem)]' />
+            <SidebarContent className='py-2'>
                 <SidebarGroup>
                     <SidebarGroupContent>
                         <SidebarMenu>
                             <SidebarMenuItem>
-                                <span className='block text-center'>text</span>
+                                <Button
+                                    type='button'
+                                    className='w-full group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:has-data-[icon=inline-start]:pl-0'
+                                >
+                                    <HugeiconsIcon
+                                        icon={FileUploadIcon}
+                                        data-icon='inline-start'
+                                        strokeWidth={2}
+                                    />
+                                    <span className='group-data-[collapsible=icon]:hidden'>
+                                        Upload
+                                    </span>
+                                </Button>
                             </SidebarMenuItem>
                         </SidebarMenu>
                     </SidebarGroupContent>
