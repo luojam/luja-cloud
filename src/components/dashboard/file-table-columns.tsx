@@ -13,7 +13,14 @@ import type { Column, ColumnDef, RowData, SortingFn } from '@tanstack/react-tabl
 import { FileActionsDropdown } from '@/components/dashboard/file-actions';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { FileRecord } from '@/types';
+import {
+    compareFilesByModified,
+    compareFilesByName,
+    compareFilesBySize,
+    formatFileDate,
+    formatFileSize,
+    type FileRecord,
+} from '@/lib/files';
 
 declare module '@tanstack/react-table' {
     // Column metadata keeps responsive widths beside the column definition.
@@ -29,49 +36,14 @@ declare module '@tanstack/react-table' {
     }
 }
 
-const nameCollator = new Intl.Collator(undefined, {
-    numeric: true,
-    sensitivity: 'base',
-});
-
-function compareNames(left: FileRecord, right: FileRecord) {
-    return nameCollator.compare(left.name, right.name) || left.id.localeCompare(right.id);
-}
-
 const sortByName: SortingFn<FileRecord> = (left, right) =>
-    compareNames(left.original, right.original);
+    compareFilesByName(left.original, right.original);
 
-const sortByModified: SortingFn<FileRecord> = (left, right) => {
-    const difference = Date.parse(left.original.modifiedAt) - Date.parse(right.original.modifiedAt);
-
-    return difference || compareNames(left.original, right.original);
-};
+const sortByModified: SortingFn<FileRecord> = (left, right) =>
+    compareFilesByModified(left.original, right.original);
 
 const sortBySize: SortingFn<FileRecord> = (left, right) =>
-    left.original.sizeBytes - right.original.sizeBytes ||
-    compareNames(left.original, right.original);
-
-function formatDate(value: string) {
-    const date = new Date(value);
-
-    return [date.getUTCDate(), date.getUTCMonth() + 1, date.getUTCFullYear()]
-        .map((part, index) => (index < 2 ? String(part).padStart(2, '0') : String(part)))
-        .join('-');
-}
-
-function formatFileSize(bytes: number) {
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    let value = bytes;
-    let unitIndex = 0;
-
-    while (value >= 1024 && unitIndex < units.length - 1) {
-        value /= 1024;
-        unitIndex += 1;
-    }
-
-    const displayValue = unitIndex === 0 ? String(value) : Number(value.toFixed(1)).toString();
-    return `${displayValue} ${units[unitIndex]}`;
-}
+    compareFilesBySize(left.original, right.original);
 
 function getFileIcon(mimeType: string): IconSvgElement {
     if (mimeType.startsWith('image/')) return FileImageIcon;
@@ -164,7 +136,7 @@ export const fileTableColumns: ColumnDef<FileRecord>[] = [
         sortDescFirst: true,
         meta: { className: 'w-[130px]' },
         header: ({ column }) => renderSortHeader(column, 'Modified'),
-        cell: ({ getValue }) => formatDate(getValue<string>()),
+        cell: ({ getValue }) => formatFileDate(getValue<string>()),
     },
     {
         id: 'sizeBytes',

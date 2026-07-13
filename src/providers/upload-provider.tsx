@@ -2,15 +2,12 @@ import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
 
 import { UploadDialog } from '@/components/dashboard/upload-dialog';
 import { UploadContext } from '@/contexts/upload-context';
+import { getUploadFileFingerprint, mergeUploadFiles } from '@/lib/files';
 
 type UploadProviderProps = {
     children: ReactNode;
     onUpload?: (files: File[]) => void | Promise<void>;
 };
-
-function getFileKey(file: File) {
-    return `${file.name}-${file.size}-${file.lastModified}`;
-}
 
 export function UploadProvider({ children, onUpload }: UploadProviderProps) {
     const inputRef = useRef<HTMLInputElement>(null);
@@ -28,11 +25,7 @@ export function UploadProvider({ children, onUpload }: UploadProviderProps) {
     function addFiles(selectedFiles: File[]) {
         if (!selectedFiles.length) return;
 
-        setFiles((currentFiles) => {
-            const existingKeys = new Set(currentFiles.map(getFileKey));
-            const newFiles = selectedFiles.filter((file) => !existingKeys.has(getFileKey(file)));
-            return [...currentFiles, ...newFiles];
-        });
+        setFiles((currentFiles) => mergeUploadFiles(currentFiles, selectedFiles));
         setOpen(true);
 
         // Allow selecting the same file after it has been removed.
@@ -40,8 +33,9 @@ export function UploadProvider({ children, onUpload }: UploadProviderProps) {
     }
 
     function removeFile(fileToRemove: File) {
+        const fingerprint = getUploadFileFingerprint(fileToRemove);
         setFiles((currentFiles) =>
-            currentFiles.filter((file) => getFileKey(file) !== getFileKey(fileToRemove))
+            currentFiles.filter((file) => getUploadFileFingerprint(file) !== fingerprint)
         );
     }
 

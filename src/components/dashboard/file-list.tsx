@@ -25,8 +25,8 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import type { FileRecord } from '@/lib/files';
 import { cn } from '@/lib/utils';
-import type { FileRecord } from '@/types';
 
 type FileListProps = {
     files: FileRecord[];

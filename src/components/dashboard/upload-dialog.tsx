@@ -12,6 +12,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { formatFileSize, getUploadFileFingerprint } from '@/lib/files';
 import { cn } from '@/lib/utils';
 
 type UploadDialogProps = {
@@ -24,16 +25,6 @@ type UploadDialogProps = {
     onSelectFiles: () => void;
     onUpload: () => void;
 };
-
-function getFileKey(file: File) {
-    return `${file.name}-${file.size}-${file.lastModified}`;
-}
-
-function formatFileSize(bytes: number) {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-}
 
 export function UploadDialog({
     open,
@@ -87,7 +78,7 @@ export function UploadDialog({
     const fileLabel = files.length === 1 ? 'file' : 'files';
     const fileItems = files.map((file) => (
         <div
-            key={getFileKey(file)}
+            key={getUploadFileFingerprint(file)}
             className='bg-muted/50 flex w-full min-w-0 items-center gap-3 rounded-md p-2'
         >
             <HugeiconsIcon icon={File01Icon} className='shrink-0' strokeWidth={2} />

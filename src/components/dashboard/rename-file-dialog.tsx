@@ -17,100 +17,13 @@ import {
     InputGroupInput,
     InputGroupText,
 } from '@/components/ui/input-group';
+import { splitFileName } from '@/lib/files';
 
 type RenameFileDialogProps = {
     fileName: string;
     onOpenChange: (open: boolean) => void;
     onConfirm: (fileName: string) => void;
 };
-
-const compoundExtensions = [
-    // Archives and package formats.
-    '.pkg.tar.zst',
-    '.pkg.tar.xz',
-    '.pkg.tar.gz',
-    '.src.tar.gz',
-    '.tar.bz2',
-    '.tar.lz4',
-    '.tar.lzma',
-    '.tar.zst',
-    '.tar.br',
-    '.tar.gz',
-    '.tar.lz',
-    '.tar.xz',
-    '.tar.z',
-    '.cpio.bz2',
-    '.cpio.gz',
-    '.cpio.xz',
-    // Compressed data, database, disk, and scientific formats.
-    '.jsonl.gz',
-    '.ndjson.gz',
-    '.fastq.gz',
-    '.fasta.gz',
-    '.csv.bz2',
-    '.csv.gz',
-    '.csv.xz',
-    '.json.bz2',
-    '.json.gz',
-    '.json.xz',
-    '.sql.bz2',
-    '.sql.gz',
-    '.sql.xz',
-    '.vcf.gz',
-    '.bed.gz',
-    '.fq.gz',
-    '.fa.gz',
-    '.nii.gz',
-    '.img.gz',
-    '.iso.gz',
-    // Type declarations, source maps, and web assets.
-    '.d.cts',
-    '.d.mts',
-    '.d.ts',
-    '.cjs.map',
-    '.css.map',
-    '.jsx.map',
-    '.mjs.map',
-    '.tsx.map',
-    '.js.map',
-    '.ts.map',
-    '.min.css',
-    '.min.js',
-    '.module.css',
-    '.module.less',
-    '.module.sass',
-    '.module.scss',
-    '.user.js',
-    // Common server-side template and include formats.
-    '.blade.php',
-    '.inc.php',
-    '.module.php',
-    '.tpl.php',
-].sort((left, right) => right.length - left.length);
-
-function splitFileName(fileName: string) {
-    const lowerFileName = fileName.toLowerCase();
-    const compoundExtension = compoundExtensions.find(
-        (extension) => lowerFileName.endsWith(extension) && fileName.length > extension.length
-    );
-
-    if (compoundExtension) {
-        const extensionStart = fileName.length - compoundExtension.length;
-        return {
-            stem: fileName.slice(0, extensionStart),
-            extension: fileName.slice(extensionStart),
-        };
-    }
-
-    const extensionStart = fileName.lastIndexOf('.');
-    // A leading dot belongs to a dotfile name rather than an extension.
-    if (extensionStart <= 0) return { stem: fileName, extension: '' };
-
-    return {
-        stem: fileName.slice(0, extensionStart),
-        extension: fileName.slice(extensionStart),
-    };
-}
 
 export function RenameFileDialog({ fileName, onOpenChange, onConfirm }: RenameFileDialogProps) {
     const { stem, extension } = splitFileName(fileName);
