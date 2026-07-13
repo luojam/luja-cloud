@@ -13,15 +13,7 @@ import type { Column, ColumnDef, RowData, SortingFn } from '@tanstack/react-tabl
 import { FileActionsDropdown } from '@/components/dashboard/file-actions';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-
-export type FileRecord = {
-    id: string;
-    name: string;
-    mimeType: string;
-    createdAt: string;
-    modifiedAt: string;
-    sizeBytes: number;
-};
+import type { FileRecord } from '@/types';
 
 declare module '@tanstack/react-table' {
     // Column metadata keeps responsive widths beside the column definition.

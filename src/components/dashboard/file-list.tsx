@@ -11,9 +11,9 @@ import { useState } from 'react';
 
 import { DeleteFilesDialog } from '@/components/dashboard/delete-files-dialog';
 import { FileActionsContextMenu } from '@/components/dashboard/file-actions';
-import { fileTableColumns, type FileRecord } from '@/components/dashboard/file-table-columns';
+import { fileTableColumns } from '@/components/dashboard/file-table-columns';
 import { RenameFileDialog } from '@/components/dashboard/rename-file-dialog';
-import { useUpload } from '@/components/dashboard/upload-context';
+import { useUpload } from '@/contexts/upload-context';
 import { Button } from '@/components/ui/button';
 import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
@@ -26,6 +26,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import type { FileRecord } from '@/types';
 
 type FileListProps = {
     files: FileRecord[];

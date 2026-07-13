@@ -4,8 +4,7 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { useUpload } from '@/components/dashboard/upload-context';
-import { UploadProvider } from '@/components/dashboard/upload-dialog';
+import { useUpload } from '@/contexts/upload-context';
 import {
     Sidebar,
     SidebarContent,
@@ -100,22 +99,20 @@ function DashboardSidebar() {
 
 export function DashboardShell({ children }: DashboardShellProps) {
     return (
-        <UploadProvider>
-            <TooltipProvider>
-                <SidebarProvider className='h-svh min-h-0 overflow-hidden'>
-                    <DashboardSidebar />
-                    <SidebarInset className='min-h-0 overflow-y-auto'>
-                        {/* The workspace owns scrolling while the shell stays fixed. */}
-                        <div className='flex-1'>
-                            <div className='flex w-full flex-col gap-6 p-4 md:p-6'>
-                                {/* Keep the sidebar reachable on narrow screens. */}
-                                <SidebarTrigger className='md:hidden' />
-                                {children}
-                            </div>
+        <TooltipProvider>
+            <SidebarProvider className='h-svh min-h-0 overflow-hidden'>
+                <DashboardSidebar />
+                <SidebarInset className='min-h-0 overflow-y-auto'>
+                    {/* The workspace owns scrolling while the shell stays fixed. */}
+                    <div className='flex-1'>
+                        <div className='flex w-full flex-col gap-6 p-4 md:p-6'>
+                            {/* Keep the sidebar reachable on narrow screens. */}
+                            <SidebarTrigger className='md:hidden' />
+                            {children}
                         </div>
-                    </SidebarInset>
-                </SidebarProvider>
-            </TooltipProvider>
-        </UploadProvider>
+                    </div>
+                </SidebarInset>
+            </SidebarProvider>
+        </TooltipProvider>
     );
 }
