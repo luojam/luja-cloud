@@ -28,7 +28,7 @@ type DashboardShellProps = {
 
 function DashboardSidebar() {
     const { isLoaded, user } = useUser();
-    const { selectFiles } = useUpload();
+    const { openUploadDialog } = useUpload();
     const userName =
         user?.fullName ||
         [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
@@ -55,7 +55,7 @@ function DashboardSidebar() {
                             <SidebarMenuItem>
                                 <Button
                                     type='button'
-                                    onClick={selectFiles}
+                                    onClick={openUploadDialog}
                                     className='w-full group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:has-data-[icon=inline-start]:pl-0'
                                 >
                                     <HugeiconsIcon
