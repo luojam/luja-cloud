@@ -5,3 +5,10 @@ node_modules
 package-lock.json
 skills-lock.json
 src/routeTree.gen.ts
+
+# AWS CDK generated files
+infra/node_modules/
+infra/dist/
+infra/coverage/
+infra/cdk.out/
+infra/.cdk.staging/
