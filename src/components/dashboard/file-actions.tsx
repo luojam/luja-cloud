@@ -9,12 +9,14 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { Button } from '@/components/ui/button';
 import {
     ContextMenuContent,
+    ContextMenuGroup,
     ContextMenuItem,
     ContextMenuSeparator,
 } from '@/components/ui/context-menu';
 import {
     DropdownMenu,
     DropdownMenuContent,
+    DropdownMenuGroup,
     DropdownMenuItem,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
@@ -22,10 +24,17 @@ import {
 
 type FileActionsDropdownProps = {
     fileName: string;
+    onDelete: () => void;
     onOpen: () => void;
+    onRename: () => void;
 };
 
-export function FileActionsDropdown({ fileName, onOpen }: FileActionsDropdownProps) {
+export function FileActionsDropdown({
+    fileName,
+    onDelete,
+    onOpen,
+    onRename,
+}: FileActionsDropdownProps) {
     return (
         <DropdownMenu
             onOpenChange={(open) => {
@@ -40,40 +49,53 @@ export function FileActionsDropdown({ fileName, onOpen }: FileActionsDropdownPro
                 <HugeiconsIcon icon={MoreVerticalIcon} strokeWidth={1.8} />
             </DropdownMenuTrigger>
             <DropdownMenuContent className='w-40' align='end'>
-                <DropdownMenuItem>
-                    <HugeiconsIcon icon={Download04Icon} strokeWidth={1.8} />
-                    Download
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                    <HugeiconsIcon icon={Edit02Icon} strokeWidth={1.8} />
-                    Rename
-                </DropdownMenuItem>
+                <DropdownMenuGroup>
+                    <DropdownMenuItem>
+                        <HugeiconsIcon icon={Download04Icon} strokeWidth={1.8} />
+                        Download
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={onRename}>
+                        <HugeiconsIcon icon={Edit02Icon} strokeWidth={1.8} />
+                        Rename
+                    </DropdownMenuItem>
+                </DropdownMenuGroup>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem variant='destructive'>
-                    <HugeiconsIcon icon={Delete02Icon} strokeWidth={1.8} />
-                    Delete
-                </DropdownMenuItem>
+                <DropdownMenuGroup>
+                    <DropdownMenuItem variant='destructive' onClick={onDelete}>
+                        <HugeiconsIcon icon={Delete02Icon} strokeWidth={1.8} />
+                        Delete
+                    </DropdownMenuItem>
+                </DropdownMenuGroup>
             </DropdownMenuContent>
         </DropdownMenu>
     );
 }
 
-export function FileActionsContextMenu() {
+type FileActionsContextMenuProps = {
+    onDelete: () => void;
+    onRename: () => void;
+};
+
+export function FileActionsContextMenu({ onDelete, onRename }: FileActionsContextMenuProps) {
     return (
         <ContextMenuContent className='w-40'>
-            <ContextMenuItem>
-                <HugeiconsIcon icon={Download04Icon} strokeWidth={1.8} />
-                Download
-            </ContextMenuItem>
-            <ContextMenuItem>
-                <HugeiconsIcon icon={Edit02Icon} strokeWidth={1.8} />
-                Rename
-            </ContextMenuItem>
+            <ContextMenuGroup>
+                <ContextMenuItem>
+                    <HugeiconsIcon icon={Download04Icon} strokeWidth={1.8} />
+                    Download
+                </ContextMenuItem>
+                <ContextMenuItem onClick={onRename}>
+                    <HugeiconsIcon icon={Edit02Icon} strokeWidth={1.8} />
+                    Rename
+                </ContextMenuItem>
+            </ContextMenuGroup>
             <ContextMenuSeparator />
-            <ContextMenuItem variant='destructive'>
-                <HugeiconsIcon icon={Delete02Icon} strokeWidth={1.8} />
-                Delete
-            </ContextMenuItem>
+            <ContextMenuGroup>
+                <ContextMenuItem variant='destructive' onClick={onDelete}>
+                    <HugeiconsIcon icon={Delete02Icon} strokeWidth={1.8} />
+                    Delete
+                </ContextMenuItem>
+            </ContextMenuGroup>
         </ContextMenuContent>
     );
 }

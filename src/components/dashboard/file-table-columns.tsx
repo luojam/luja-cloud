@@ -29,6 +29,12 @@ declare module '@tanstack/react-table' {
     interface ColumnMeta<TData extends RowData, TValue> {
         className?: string;
     }
+
+    // Table metadata connects row actions to list-level dialogs.
+    interface TableMeta<TData extends RowData> {
+        onDelete?: (files: TData[]) => void;
+        onRename?: (file: TData) => void;
+    }
 }
 
 const nameCollator = new Intl.Collator(undefined, {
@@ -185,7 +191,9 @@ export const fileTableColumns: ColumnDef<FileRecord>[] = [
         cell: ({ row, table }) => (
             <FileActionsDropdown
                 fileName={row.original.name}
+                onDelete={() => table.options.meta?.onDelete?.([row.original])}
                 onOpen={() => table.resetRowSelection()}
+                onRename={() => table.options.meta?.onRename?.(row.original)}
             />
         ),
     },

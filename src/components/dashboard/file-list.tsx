@@ -9,8 +9,10 @@ import {
 import type { RowSelectionState, SortingState } from '@tanstack/react-table';
 import { useState } from 'react';
 
+import { DeleteFilesDialog } from '@/components/dashboard/delete-files-dialog';
 import { FileActionsContextMenu } from '@/components/dashboard/file-actions';
 import { fileTableColumns, type FileRecord } from '@/components/dashboard/file-table-columns';
+import { RenameFileDialog } from '@/components/dashboard/rename-file-dialog';
 import { useUpload } from '@/components/dashboard/upload-context';
 import { Button } from '@/components/ui/button';
 import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu';
@@ -27,6 +29,8 @@ import { cn } from '@/lib/utils';
 
 type FileListProps = {
     files: FileRecord[];
+    onDelete?: (files: FileRecord[]) => void;
+    onRename?: (file: FileRecord, fileName: string) => void;
 };
 
 function getAriaSort(direction: false | 'asc' | 'desc') {
@@ -35,10 +39,12 @@ function getAriaSort(direction: false | 'asc' | 'desc') {
     return 'none';
 }
 
-export function FileList({ files }: FileListProps) {
+export function FileList({ files, onDelete, onRename }: FileListProps) {
     const { selectFiles } = useUpload();
     const [sorting, setSorting] = useState<SortingState>([{ id: 'modifiedAt', desc: true }]);
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+    const [filesToDelete, setFilesToDelete] = useState<FileRecord[]>([]);
+    const [fileToRename, setFileToRename] = useState<FileRecord | null>(null);
     // TanStack exposes mutable table APIs, so the React compiler safely skips this hook.
     // eslint-disable-next-line react-hooks/incompatible-library
     const table = useReactTable({
@@ -49,11 +55,25 @@ export function FileList({ files }: FileListProps) {
         onRowSelectionChange: setRowSelection,
         enableRowSelection: true,
         getRowId: (file) => file.id,
+        meta: { onDelete: setFilesToDelete, onRename: setFileToRename },
         getCoreRowModel: getCoreRowModel(),
         getSortedRowModel: getSortedRowModel(),
     });
     const fileLabel = files.length === 1 ? 'file' : 'files';
-    const selectedCount = table.getSelectedRowModel().rows.length;
+    const selectedFiles = table.getSelectedRowModel().rows.map((row) => row.original);
+    const selectedCount = selectedFiles.length;
+
+    function confirmDelete() {
+        onDelete?.(filesToDelete);
+        setFilesToDelete([]);
+        table.resetRowSelection();
+    }
+
+    function confirmRename(fileName: string) {
+        if (!fileToRename) return;
+        onRename?.(fileToRename, fileName);
+        setFileToRename(null);
+    }
 
     return (
         <section className='flex w-full min-w-0 flex-col gap-3' aria-labelledby='files-heading'>
@@ -72,7 +92,12 @@ export function FileList({ files }: FileListProps) {
                         <HugeiconsIcon icon={Download04Icon} strokeWidth={1.8} />
                         Download
                     </Button>
-                    <Button variant='destructive' size='sm' disabled={selectedCount === 0}>
+                    <Button
+                        variant='destructive'
+                        size='sm'
+                        disabled={selectedCount === 0}
+                        onClick={() => setFilesToDelete(selectedFiles)}
+                    >
                         <HugeiconsIcon icon={Delete02Icon} strokeWidth={1.8} />
                         Delete
                     </Button>
@@ -146,12 +171,34 @@ export function FileList({ files }: FileListProps) {
                                             </TableCell>
                                         ))}
                                     </ContextMenuTrigger>
-                                    <FileActionsContextMenu />
+                                    <FileActionsContextMenu
+                                        onDelete={() => setFilesToDelete([row.original])}
+                                        onRename={() => setFileToRename(row.original)}
+                                    />
                                 </ContextMenu>
                             ))}
                         </TableBody>
                     </Table>
                 </div>
+            )}
+
+            <DeleteFilesDialog
+                fileNames={filesToDelete.map((file) => file.name)}
+                onOpenChange={(open) => {
+                    if (!open) setFilesToDelete([]);
+                }}
+                onConfirm={confirmDelete}
+            />
+            {fileToRename && (
+                <RenameFileDialog
+                    // Reset the draft when a different file is selected.
+                    key={fileToRename.id}
+                    fileName={fileToRename.name}
+                    onOpenChange={(open) => {
+                        if (!open) setFileToRename(null);
+                    }}
+                    onConfirm={confirmRename}
+                />
             )}
         </section>
     );
