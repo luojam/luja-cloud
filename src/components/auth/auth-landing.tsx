@@ -1,12 +1,39 @@
-import { SignIn, useAuth } from '@clerk/react';
-import { Navigate } from '@tanstack/react-router';
+import { SignIn } from '@clerk/react';
+import { AuthBackground } from '@/components/auth/auth-background';
+import { Skeleton } from '@/components/ui/skeleton';
+
+function ClerkPanelSkeleton() {
+    return (
+        <div
+            className='bg-card flex w-full flex-col gap-6 rounded-xl border p-8'
+            role='status'
+            aria-label='Loading sign-in form'
+        >
+            {/* Follow Clerk's compact form rhythm without guessing a fixed panel height. */}
+            <div className='flex flex-col items-center gap-3'>
+                <Skeleton className='h-8 w-36' />
+                <Skeleton className='h-4 w-56' />
+            </div>
+            <Skeleton className='h-10 w-full' />
+            <div className='flex items-center gap-3'>
+                <Skeleton className='h-px flex-1' />
+                <Skeleton className='h-4 w-8' />
+                <Skeleton className='h-px flex-1' />
+            </div>
+            <div className='flex flex-col gap-3'>
+                <Skeleton className='h-4 w-24' />
+                <Skeleton className='h-10 w-full' />
+            </div>
+            <Skeleton className='h-10 w-full' />
+            <div className='flex justify-center gap-2'>
+                <Skeleton className='h-4 w-28' />
+                <Skeleton className='h-4 w-16' />
+            </div>
+        </div>
+    );
+}
 
 function ClerkPanel() {
-    const { isLoaded, isSignedIn } = useAuth();
-
-    if (!isLoaded) return <div className='w-full max-w-[25rem]' />;
-    if (isSignedIn) return <Navigate to='/dashboard' replace />;
-
     return (
         <div className='w-full max-w-[25rem]'>
             <SignIn
@@ -14,9 +41,10 @@ function ClerkPanel() {
                 routing='hash'
                 forceRedirectUrl='/dashboard'
                 signUpForceRedirectUrl='/dashboard'
+                fallback={<ClerkPanelSkeleton />}
                 appearance={{
                     variables: {
-                        colorPrimary: 'oklch(0.455 0.188 13.697)',
+                        colorPrimary: 'var(--primary)',
                     },
                 }}
             />
@@ -26,15 +54,7 @@ function ClerkPanel() {
 
 export function AuthLanding() {
     return (
-        <main className='dark bg-background text-foreground relative min-h-svh overflow-hidden'>
-            <div
-                className='absolute -top-72 -right-40 size-192 rounded-full bg-[radial-gradient(circle_at_35%_40%,rgba(251,113,133,0.14),rgba(244,63,94,0.02)_58%,transparent_74%)] blur-3xl'
-                aria-hidden='true'
-            />
-            <div
-                className='absolute -bottom-88 -left-60 size-200 rounded-full bg-[radial-gradient(circle_at_center,rgba(196,181,253,0.12),rgba(219,39,119,0.015)_62%,transparent_76%)] blur-3xl'
-                aria-hidden='true'
-            />
+        <AuthBackground>
             <section className='relative z-1 mx-auto grid min-h-[calc(100svh-4.5rem)] w-[calc(100%-2.5rem)] max-w-6xl grid-cols-[minmax(0,1fr)_minmax(21rem,28rem)] items-center gap-[clamp(3rem,9vw,10rem)] pt-16 pb-24 max-[800px]:grid-cols-1 max-[800px]:pt-12'>
                 <div>
                     <h1 className='mb-6 max-w-[40rem] text-[clamp(2.6rem,5vw,5rem)] leading-[1.02] font-[560] tracking-[-0.055em]'>
@@ -46,6 +66,6 @@ export function AuthLanding() {
                 </div>
                 <ClerkPanel />
             </section>
-        </main>
+        </AuthBackground>
     );
 }

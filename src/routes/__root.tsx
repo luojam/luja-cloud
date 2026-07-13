@@ -1,5 +1,6 @@
 import type { useAuth } from '@clerk/react';
 import { createRootRouteWithContext, Outlet } from '@tanstack/react-router';
+import { AuthLoadingScreen } from '@/components/auth/auth-loading-screen';
 
 export interface RouterContext {
     auth: ReturnType<typeof useAuth>;
@@ -10,5 +11,10 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 });
 
 function RootLayout() {
+    const { auth } = Route.useRouteContext();
+
+    // Keep child routes hidden until Clerk restores the session.
+    if (!auth.isLoaded) return <AuthLoadingScreen />;
+
     return <Outlet />;
 }

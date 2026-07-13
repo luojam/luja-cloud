@@ -3,6 +3,19 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="color-scheme" content="dark" />
+        <style>
+            /* Prevent the browser canvas from flashing before app styles load. */
+            html {
+                background: oklch(0.148 0.004 228.8);
+                color-scheme: dark;
+            }
+
+            body {
+                margin: 0;
+                background: inherit;
+            }
+        </style>
         <title>Luja Cloud</title>
     </head>
     <body>

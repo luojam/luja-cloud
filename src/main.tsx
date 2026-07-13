@@ -27,9 +27,6 @@ function AppRouter() {
         void router.invalidate();
     }, [auth.isLoaded, auth.isSignedIn]);
 
-    // Wait for Clerk to restore the session before loading routes.
-    if (!auth.isLoaded) return null;
-
     return <RouterProvider router={router} context={{ auth }} />;
 }
 
