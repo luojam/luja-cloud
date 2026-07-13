@@ -4,6 +4,8 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { useUpload } from '@/components/dashboard/upload-context';
+import { UploadProvider } from '@/components/dashboard/upload-dialog';
 import {
     Sidebar,
     SidebarContent,
@@ -26,6 +28,7 @@ type DashboardShellProps = {
 
 function DashboardSidebar() {
     const { isLoaded, user } = useUser();
+    const { selectFiles } = useUpload();
     const userName =
         user?.fullName ||
         [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
@@ -52,6 +55,7 @@ function DashboardSidebar() {
                             <SidebarMenuItem>
                                 <Button
                                     type='button'
+                                    onClick={selectFiles}
                                     className='w-full group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:has-data-[icon=inline-start]:pl-0'
                                 >
                                     <HugeiconsIcon
@@ -96,20 +100,22 @@ function DashboardSidebar() {
 
 export function DashboardShell({ children }: DashboardShellProps) {
     return (
-        <TooltipProvider>
-            <SidebarProvider className='h-svh min-h-0 overflow-hidden'>
-                <DashboardSidebar />
-                <SidebarInset className='min-h-0 overflow-y-auto'>
-                    {/* The workspace owns scrolling while the shell stays fixed. */}
-                    <div className='flex-1'>
-                        <div className='flex w-full flex-col gap-6 p-4 md:p-6'>
-                            {/* Keep the sidebar reachable on narrow screens. */}
-                            <SidebarTrigger className='md:hidden' />
-                            {children}
+        <UploadProvider>
+            <TooltipProvider>
+                <SidebarProvider className='h-svh min-h-0 overflow-hidden'>
+                    <DashboardSidebar />
+                    <SidebarInset className='min-h-0 overflow-y-auto'>
+                        {/* The workspace owns scrolling while the shell stays fixed. */}
+                        <div className='flex-1'>
+                            <div className='flex w-full flex-col gap-6 p-4 md:p-6'>
+                                {/* Keep the sidebar reachable on narrow screens. */}
+                                <SidebarTrigger className='md:hidden' />
+                                {children}
+                            </div>
                         </div>
-                    </div>
-                </SidebarInset>
-            </SidebarProvider>
-        </TooltipProvider>
+                    </SidebarInset>
+                </SidebarProvider>
+            </TooltipProvider>
+        </UploadProvider>
     );
 }

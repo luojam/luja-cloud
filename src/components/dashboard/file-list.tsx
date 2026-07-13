@@ -8,6 +8,7 @@ import type { SortingState } from '@tanstack/react-table';
 import { useState } from 'react';
 
 import { fileTableColumns, type FileRecord } from '@/components/dashboard/file-table-columns';
+import { useUpload } from '@/components/dashboard/upload-context';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import {
@@ -31,6 +32,7 @@ function getAriaSort(direction: false | 'asc' | 'desc') {
 }
 
 export function FileList({ files }: FileListProps) {
+    const { selectFiles } = useUpload();
     const [sorting, setSorting] = useState<SortingState>([{ id: 'modifiedAt', desc: true }]);
     // TanStack exposes mutable table APIs, so the React compiler safely skips this hook.
     // eslint-disable-next-line react-hooks/incompatible-library
@@ -62,7 +64,9 @@ export function FileList({ files }: FileListProps) {
                         <EmptyTitle>No files yet</EmptyTitle>
                     </EmptyHeader>
                     <EmptyContent>
-                        <Button>Upload</Button>
+                        <Button type='button' onClick={selectFiles}>
+                            Upload
+                        </Button>
                     </EmptyContent>
                 </Empty>
             ) : (
