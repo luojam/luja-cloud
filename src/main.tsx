@@ -1,9 +1,9 @@
 import './index.css';
-import { ClerkProvider } from '@clerk/react';
+import { ClerkProvider, useAuth } from '@clerk/react';
 import { dark } from '@clerk/ui/themes';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
-import { StrictMode } from 'react';
+import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { router } from '@/router';
 
@@ -15,6 +15,24 @@ if (!clerkPublishableKey) {
 
 const queryClient = new QueryClient();
 
+// Keep the Clerk-to-router bridge next to the application providers.
+// eslint-disable-next-line react-refresh/only-export-components
+function AppRouter() {
+    const auth = useAuth();
+
+    useEffect(() => {
+        if (!auth.isLoaded) return;
+
+        // Re-run route guards whenever the active session changes.
+        void router.invalidate();
+    }, [auth.isLoaded, auth.isSignedIn]);
+
+    // Wait for Clerk to restore the session before loading routes.
+    if (!auth.isLoaded) return null;
+
+    return <RouterProvider router={router} context={{ auth }} />;
+}
+
 createRoot(document.getElementById('root')!).render(
     <StrictMode>
         <ClerkProvider
@@ -23,7 +41,7 @@ createRoot(document.getElementById('root')!).render(
             appearance={{ theme: dark }}
         >
             <QueryClientProvider client={queryClient}>
-                <RouterProvider router={router} />
+                <AppRouter />
             </QueryClientProvider>
         </ClerkProvider>
     </StrictMode>
