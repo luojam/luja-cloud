@@ -10,8 +10,9 @@ import {
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import type { Column, ColumnDef, RowData, SortingFn } from '@tanstack/react-table';
 
+import { FileActionsDropdown } from '@/components/dashboard/file-actions';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Checkbox } from '@/components/ui/checkbox';
 
 export type FileRecord = {
     id: string;
@@ -117,6 +118,26 @@ function renderSortHeader(column: Column<FileRecord, unknown>, label: string) {
 
 export const fileTableColumns: ColumnDef<FileRecord>[] = [
     {
+        id: 'select',
+        enableSorting: false,
+        meta: { className: 'w-10' },
+        header: ({ table }) => (
+            <Checkbox
+                aria-label='Select all files'
+                checked={table.getIsAllRowsSelected()}
+                indeterminate={table.getIsSomeRowsSelected()}
+                onCheckedChange={(checked) => table.toggleAllRowsSelected(checked)}
+            />
+        ),
+        cell: ({ row }) => (
+            <Checkbox
+                aria-label={`Select ${row.original.name}`}
+                checked={row.getIsSelected()}
+                onCheckedChange={(checked) => row.toggleSelected(checked)}
+            />
+        ),
+    },
+    {
         id: 'name',
         accessorKey: 'name',
         sortingFn: sortByName,
@@ -133,20 +154,7 @@ export const fileTableColumns: ColumnDef<FileRecord>[] = [
                         icon={getFileIcon(file.mimeType)}
                         strokeWidth={1.8}
                     />
-                    <Tooltip>
-                        <TooltipTrigger
-                            render={
-                                <Button
-                                    variant='link'
-                                    size='sm'
-                                    className='min-w-0 flex-1 shrink justify-start overflow-hidden px-0 text-white'
-                                />
-                            }
-                        >
-                            <span className='truncate'>{file.name}</span>
-                        </TooltipTrigger>
-                        <TooltipContent>{file.name}</TooltipContent>
-                    </Tooltip>
+                    <span className='min-w-0 flex-1 truncate text-white'>{file.name}</span>
                 </div>
             );
         },
@@ -168,5 +176,17 @@ export const fileTableColumns: ColumnDef<FileRecord>[] = [
         meta: { className: 'hidden w-[90px] text-right sm:table-cell' },
         header: ({ column }) => renderSortHeader(column, 'Size'),
         cell: ({ getValue }) => formatFileSize(getValue<number>()),
+    },
+    {
+        id: 'actions',
+        enableSorting: false,
+        meta: { className: 'w-10 text-right' },
+        header: () => <span className='sr-only'>Actions</span>,
+        cell: ({ row, table }) => (
+            <FileActionsDropdown
+                fileName={row.original.name}
+                onOpen={() => table.resetRowSelection()}
+            />
+        ),
     },
 ];
