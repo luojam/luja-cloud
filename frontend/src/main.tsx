@@ -25,7 +25,7 @@ function AppRouter() {
 
         // Re-run route guards whenever the active session changes.
         void router.invalidate();
-    }, [auth.isLoaded, auth.isSignedIn]);
+    }, [auth.isLoaded, auth.isSignedIn, auth.sessionId]);
 
     return <RouterProvider router={router} context={{ auth }} />;
 }

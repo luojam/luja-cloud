@@ -1,27 +1,17 @@
 # luja Cloud
 
-## Architecture documentation
+A minimal React, Clerk, and AWS CDK walking skeleton for verifying an authenticated browser session at the backend.
 
-- [Proposed backend architecture](docs/architecture.md)
+## Documentation
+
+- [Implementation plan and tickets](PLAN.md)
+- [Deployment and operations runbook](infra/README.md)
+- [Architecture](docs/architecture.md)
 
 ## Repository structure
 
 - `frontend/` — React and Vite application
-- `infra/` — AWS CDK application and backend handlers
-- `docs/` — Architecture and project documentation
+- `infra/` — AWS CDK application and backend handler
+- `docs/` — architecture and project documentation
 
-## Frontend development
-
-```sh
-cd frontend
-npm install
-npm run dev
-```
-
-## Infrastructure development
-
-```sh
-cd infra
-npm install
-npm run build
-```
+See the deployment runbook for Clerk/AWS configuration, build and deployment commands, smoke testing, troubleshooting, and cleanup.

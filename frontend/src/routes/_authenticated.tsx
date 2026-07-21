@@ -1,4 +1,5 @@
 import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
+import { BackendSessionGate } from '@/components/auth/backend-session-gate';
 import { AuthLoadingScreen } from '@/components/auth/auth-loading-screen';
 
 export const Route = createFileRoute('/_authenticated')({
@@ -16,5 +17,9 @@ function AuthenticatedLayout() {
     // Never reveal protected routes before the guard settles.
     if (!auth.isLoaded || !auth.isSignedIn) return <AuthLoadingScreen />;
 
-    return <Outlet />;
+    return (
+        <BackendSessionGate>
+            <Outlet />
+        </BackendSessionGate>
+    );
 }

@@ -3,6 +3,11 @@
     "version": "0.1.0",
     "scripts": {
         "build": "tsc",
+        "build:frontend": "npm --prefix ../frontend run build",
+        "synth": "npm run build && npm run build:frontend && cdk synth",
+        "diff": "npm run build && npm run build:frontend && cdk diff",
+        "deploy": "npm run build && npm run build:frontend && cdk deploy --require-approval never",
+        "destroy": "npm run build && npm run build:frontend && cdk destroy --force",
         "watch": "tsc -w",
         "test": "jest",
         "cdk": "cdk"

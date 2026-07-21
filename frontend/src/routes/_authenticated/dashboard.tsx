@@ -1,8 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
+
 import { DashboardShell } from '@/components/dashboard/dashboard-shell';
-import { FileList } from '@/components/dashboard/file-list';
-import files from '@/data/files.json';
-import type { FileRecord } from '@/lib/files';
+import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { UploadProvider } from '@/providers/upload-provider';
 
 export const Route = createFileRoute('/_authenticated/dashboard')({
@@ -13,7 +12,11 @@ function DashboardPage() {
     return (
         <UploadProvider>
             <DashboardShell>
-                <FileList files={files satisfies FileRecord[]} />
+                <Empty>
+                    <EmptyHeader>
+                        <EmptyTitle>Backend session verified</EmptyTitle>
+                    </EmptyHeader>
+                </Empty>
             </DashboardShell>
         </UploadProvider>
     );
