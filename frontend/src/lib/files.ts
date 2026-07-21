@@ -1,5 +1,5 @@
 export type FileRecord = {
-    id: string;
+    fileId: string;
     name: string;
     mimeType: string;
     createdAt: string;
@@ -160,7 +160,9 @@ export function mergeUploadFiles(current: File[], incoming: File[]) {
 }
 
 export function compareFilesByName(left: FileRecord, right: FileRecord) {
-    return fileNameCollator.compare(left.name, right.name) || left.id.localeCompare(right.id);
+    return (
+        fileNameCollator.compare(left.name, right.name) || left.fileId.localeCompare(right.fileId)
+    );
 }
 
 export function compareFilesByModified(left: FileRecord, right: FileRecord) {

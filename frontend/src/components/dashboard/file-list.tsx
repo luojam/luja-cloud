@@ -55,7 +55,7 @@ export function FileList({ files, onDelete, onRename }: FileListProps) {
         onSortingChange: setSorting,
         onRowSelectionChange: setRowSelection,
         enableRowSelection: true,
-        getRowId: (file) => file.id,
+        getRowId: (file) => file.fileId,
         meta: { onDelete: setFilesToDelete, onRename: setFileToRename },
         getCoreRowModel: getCoreRowModel(),
         getSortedRowModel: getSortedRowModel(),
@@ -193,7 +193,7 @@ export function FileList({ files, onDelete, onRename }: FileListProps) {
             {fileToRename && (
                 <RenameFileDialog
                     // Reset the draft when a different file is selected.
-                    key={fileToRename.id}
+                    key={fileToRename.fileId}
                     fileName={fileToRename.name}
                     onOpenChange={(open) => {
                         if (!open) setFileToRename(null);
