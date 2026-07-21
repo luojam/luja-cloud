@@ -11,7 +11,9 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { FieldError } from '@/components/ui/field';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Spinner } from '@/components/ui/spinner';
 import { formatFileSize, getUploadFileFingerprint } from '@/lib/files';
 import { cn } from '@/lib/utils';
 
@@ -19,6 +21,7 @@ type UploadDialogProps = {
     open: boolean;
     files: File[];
     isUploading: boolean;
+    error?: string;
     onOpenChange: (open: boolean) => void;
     onAddFiles: (files: File[]) => void;
     onRemoveFile: (file: File) => void;
@@ -30,6 +33,7 @@ export function UploadDialog({
     open,
     files,
     isUploading,
+    error,
     onOpenChange,
     onAddFiles,
     onRemoveFile,
@@ -129,6 +133,7 @@ export function UploadDialog({
                 )}
 
                 <div className='flex flex-col gap-2'>
+                    <FieldError>{error}</FieldError>
                     <span className='text-muted-foreground self-end text-right text-xs whitespace-nowrap'>
                         {files.length} {fileLabel} · {formatFileSize(totalSize)}
                     </span>
@@ -160,6 +165,7 @@ export function UploadDialog({
                                 disabled={!files.length || isUploading}
                                 onClick={onUpload}
                             >
+                                {isUploading && <Spinner data-icon='inline-start' />}
                                 {isUploading ? 'Uploading…' : 'Upload'}
                             </Button>
                         </div>

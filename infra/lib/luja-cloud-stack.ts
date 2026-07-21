@@ -8,8 +8,10 @@ import * as cdk from 'aws-cdk-lib/core';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as customResources from 'aws-cdk-lib/custom-resources';
 import * as s3deployment from 'aws-cdk-lib/aws-s3-deployment';
 import { Construct } from 'constructs';
 
@@ -28,6 +30,21 @@ export class LujaCloudStack extends cdk.Stack {
             sortKey: { name: 'fileId', type: dynamodb.AttributeType.STRING },
             billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
             removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+
+        const userFilesBucket = new s3.Bucket(this, 'UserFilesBucket', {
+            blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+            encryption: s3.BucketEncryption.S3_MANAGED,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+            autoDeleteObjects: true,
+            cors: [
+                {
+                    allowedMethods: [s3.HttpMethods.PUT],
+                    allowedOrigins: ['http://localhost:5173', 'http://localhost:4173'],
+                    allowedHeaders: ['content-type'],
+                    maxAge: 300,
+                },
+            ],
         });
 
         const sessionLogGroup = new logs.LogGroup(this, 'SessionFunctionLogs', {
@@ -58,6 +75,77 @@ export class LujaCloudStack extends cdk.Stack {
         });
         filesTable.grantReadData(listFilesFunction);
 
+        const initiateUploadLogGroup = new logs.LogGroup(this, 'InitiateUploadFunctionLogs', {
+            retention: logs.RetentionDays.ONE_WEEK,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+        const initiateUploadFunction = new lambdaNodejs.NodejsFunction(
+            this,
+            'InitiateUploadFunction',
+            {
+                entry: path.join(__dirname, '..', 'functions', 'initiate-upload.ts'),
+                handler: 'handler',
+                runtime: lambda.Runtime.NODEJS_22_X,
+                logGroup: initiateUploadLogGroup,
+                environment: {
+                    FILES_TABLE_NAME: filesTable.tableName,
+                    FILES_BUCKET_NAME: userFilesBucket.bucketName,
+                },
+            }
+        );
+        initiateUploadFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['dynamodb:PutItem'],
+                resources: [filesTable.tableArn],
+            })
+        );
+        initiateUploadFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['s3:PutObject'],
+                resources: [userFilesBucket.arnForObjects('files/*')],
+            })
+        );
+
+        const completeUploadLogGroup = new logs.LogGroup(this, 'CompleteUploadFunctionLogs', {
+            retention: logs.RetentionDays.ONE_WEEK,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+        const completeUploadFunction = new lambdaNodejs.NodejsFunction(
+            this,
+            'CompleteUploadFunction',
+            {
+                entry: path.join(__dirname, '..', 'functions', 'complete-upload.ts'),
+                handler: 'handler',
+                runtime: lambda.Runtime.NODEJS_22_X,
+                logGroup: completeUploadLogGroup,
+                environment: {
+                    FILES_TABLE_NAME: filesTable.tableName,
+                    FILES_BUCKET_NAME: userFilesBucket.bucketName,
+                },
+            }
+        );
+        completeUploadFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
+                resources: [filesTable.tableArn],
+            })
+        );
+        completeUploadFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['s3:GetObject'],
+                resources: [userFilesBucket.arnForObjects('files/*')],
+            })
+        );
+        // HeadObject returns 403 rather than 404 for an absent key unless the caller can list the
+        // bucket. Prefix-scoped list access lets the handler classify missing uploads correctly.
+        completeUploadFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['s3:ListBucket'],
+                resources: [userFilesBucket.bucketArn],
+                conditions: { StringLike: { 's3:prefix': ['files/*'] } },
+            })
+        );
+
         const api = new apigatewayv2.HttpApi(this, 'SessionApi');
         const authorizer = new HttpJwtAuthorizer('ClerkJwtAuthorizer', props.clerkIssuer, {
             identitySource: ['$request.header.Authorization'],
@@ -75,6 +163,26 @@ export class LujaCloudStack extends cdk.Stack {
             path: '/api/files',
             methods: [apigatewayv2.HttpMethod.GET],
             integration: new HttpLambdaIntegration('ListFilesIntegration', listFilesFunction),
+            authorizer,
+        });
+
+        api.addRoutes({
+            path: '/api/files/uploads',
+            methods: [apigatewayv2.HttpMethod.POST],
+            integration: new HttpLambdaIntegration(
+                'InitiateUploadIntegration',
+                initiateUploadFunction
+            ),
+            authorizer,
+        });
+
+        api.addRoutes({
+            path: '/api/files/{id}/complete',
+            methods: [apigatewayv2.HttpMethod.POST],
+            integration: new HttpLambdaIntegration(
+                'CompleteUploadIntegration',
+                completeUploadFunction
+            ),
             authorizer,
         });
 
@@ -139,13 +247,77 @@ function handler(event) {
                         `${api.apiId}.execute-api.${this.region}.${this.urlSuffix}`,
                         { protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY }
                     ),
-                    allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+                    allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
                     cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
                     originRequestPolicy:
                         cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
                     viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
                 },
             },
+        });
+
+        // Apply deployment CORS after CloudFront exists, avoiding a bucket → distribution → API
+        // dependency cycle while still restricting uploads to known origins.
+        new customResources.AwsCustomResource(this, 'UserFilesDeploymentCors', {
+            onCreate: {
+                service: 'S3',
+                action: 'putBucketCors',
+                parameters: {
+                    Bucket: userFilesBucket.bucketName,
+                    CORSConfiguration: {
+                        CORSRules: [
+                            {
+                                AllowedMethods: ['PUT'],
+                                AllowedOrigins: [
+                                    'http://localhost:5173',
+                                    'http://localhost:4173',
+                                    `https://${distribution.distributionDomainName}`,
+                                ],
+                                AllowedHeaders: ['content-type'],
+                                MaxAgeSeconds: 300,
+                            },
+                        ],
+                    },
+                },
+                physicalResourceId: customResources.PhysicalResourceId.of(
+                    'user-files-deployment-cors'
+                ),
+            },
+            onUpdate: {
+                service: 'S3',
+                action: 'putBucketCors',
+                parameters: {
+                    Bucket: userFilesBucket.bucketName,
+                    CORSConfiguration: {
+                        CORSRules: [
+                            {
+                                AllowedMethods: ['PUT'],
+                                AllowedOrigins: [
+                                    'http://localhost:5173',
+                                    'http://localhost:4173',
+                                    `https://${distribution.distributionDomainName}`,
+                                ],
+                                AllowedHeaders: ['content-type'],
+                                MaxAgeSeconds: 300,
+                            },
+                        ],
+                    },
+                },
+                physicalResourceId: customResources.PhysicalResourceId.of(
+                    'user-files-deployment-cors'
+                ),
+            },
+            policy: customResources.AwsCustomResourcePolicy.fromStatements([
+                new iam.PolicyStatement({
+                    actions: ['s3:PutBucketCORS'],
+                    resources: [userFilesBucket.bucketArn],
+                }),
+            ]),
+            installLatestAwsSdk: false,
+            logGroup: new logs.LogGroup(this, 'UserFilesCorsResourceLogs', {
+                retention: logs.RetentionDays.ONE_WEEK,
+                removalPolicy: cdk.RemovalPolicy.DESTROY,
+            }),
         });
 
         new s3deployment.BucketDeployment(this, 'FrontendDeployment', {

@@ -1,14 +1,22 @@
 import type { FileRecord } from '@/lib/files';
 
+export const MAX_UPLOAD_SIZE_BYTES = 100 * 1024 * 1024;
+export const DEFAULT_UPLOAD_MIME_TYPE = 'application/octet-stream';
+
 export type FilesApiFailureKind = 'authentication' | 'retryable' | 'generic';
 
 type GetToken = () => Promise<string | null>;
 
+type InitiatedUpload = {
+    fileId: string;
+    uploadUrl: string;
+};
+
 export class FilesApiError extends Error {
     readonly kind: FilesApiFailureKind;
 
-    constructor(kind: FilesApiFailureKind) {
-        super('Unable to load files.');
+    constructor(kind: FilesApiFailureKind, message = 'Unable to load files.') {
+        super(message);
         this.name = 'FilesApiError';
         this.kind = kind;
     }
@@ -65,47 +73,146 @@ function parseFilesPayload(value: unknown): FileRecord[] {
     return payload.files;
 }
 
-export async function listFiles(getToken: GetToken, signal: AbortSignal): Promise<FileRecord[]> {
-    let token: string | null;
+function parseInitiatedUpload(value: unknown): InitiatedUpload {
+    if (typeof value !== 'object' || value === null) {
+        throw new FilesApiError('generic', 'Unable to start the upload.');
+    }
+    const payload = value as Record<string, unknown>;
+    if (
+        !hasOnlyKeys(payload, ['fileId', 'uploadUrl']) ||
+        !isNonEmptyString(payload.fileId) ||
+        !isNonEmptyString(payload.uploadUrl)
+    ) {
+        throw new FilesApiError('generic', 'Unable to start the upload.');
+    }
 
+    try {
+        const url = new URL(payload.uploadUrl);
+        if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error();
+    } catch {
+        throw new FilesApiError('generic', 'Unable to start the upload.');
+    }
+    return { fileId: payload.fileId, uploadUrl: payload.uploadUrl };
+}
+
+async function authenticatedRequest(
+    getToken: GetToken,
+    path: string,
+    init: RequestInit,
+    signal: AbortSignal,
+    failureMessage: string
+) {
+    let token: string | null;
     try {
         token = await getToken();
     } catch {
         if (signal.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
-        throw new FilesApiError('generic');
+        throw new FilesApiError('generic', failureMessage);
     }
 
     if (signal.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
-    if (!token) throw new FilesApiError('authentication');
+    if (!token) throw new FilesApiError('authentication', 'Your sign-in could not be verified.');
 
     let response: Response;
     try {
-        response = await fetch('/api/files', {
-            method: 'GET',
+        response = await fetch(path, {
+            ...init,
             headers: {
                 Accept: 'application/json',
                 Authorization: `Bearer ${token}`,
+                ...init.headers,
             },
             cache: 'no-store',
             signal,
         });
     } catch (error) {
         if (signal.aborted) throw error;
-        throw new FilesApiError('retryable');
+        throw new FilesApiError('retryable', failureMessage);
     }
 
     if (response.status === 401 || response.status === 403) {
-        throw new FilesApiError('authentication');
+        throw new FilesApiError('authentication', 'Your sign-in could not be verified.');
     }
-    if (response.status >= 500) throw new FilesApiError('retryable');
-    if (!response.ok) throw new FilesApiError('generic');
+    if (response.status >= 500) throw new FilesApiError('retryable', failureMessage);
+    if (!response.ok) throw new FilesApiError('generic', failureMessage);
+    return response;
+}
 
-    let payload: unknown;
+async function responseJson(response: Response, failureMessage: string): Promise<unknown> {
     try {
-        payload = await response.json();
+        return await response.json();
     } catch {
-        throw new FilesApiError('generic');
+        throw new FilesApiError('generic', failureMessage);
     }
+}
 
-    return parseFilesPayload(payload);
+export async function listFiles(getToken: GetToken, signal: AbortSignal): Promise<FileRecord[]> {
+    const response = await authenticatedRequest(
+        getToken,
+        '/api/files',
+        { method: 'GET' },
+        signal,
+        'Unable to load files.'
+    );
+    return parseFilesPayload(await responseJson(response, 'Unable to load files.'));
+}
+
+export async function initiateUpload(
+    getToken: GetToken,
+    file: File,
+    signal: AbortSignal
+): Promise<InitiatedUpload> {
+    const mimeType = file.type.trim() || DEFAULT_UPLOAD_MIME_TYPE;
+    const response = await authenticatedRequest(
+        getToken,
+        '/api/files/uploads',
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: file.name, mimeType, sizeBytes: file.size }),
+        },
+        signal,
+        `Unable to upload ${file.name}.`
+    );
+    return parseInitiatedUpload(await responseJson(response, `Unable to upload ${file.name}.`));
+}
+
+export async function putUpload(uploadUrl: string, file: File, signal: AbortSignal): Promise<void> {
+    const mimeType = file.type.trim() || DEFAULT_UPLOAD_MIME_TYPE;
+    let response: Response;
+    try {
+        response = await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': mimeType },
+            body: file,
+            signal,
+        });
+    } catch (error) {
+        if (signal.aborted) throw error;
+        throw new FilesApiError('retryable', `Unable to upload ${file.name}.`);
+    }
+    if (!response.ok) throw new FilesApiError('generic', `Unable to upload ${file.name}.`);
+}
+
+export async function completeUpload(
+    getToken: GetToken,
+    fileId: string,
+    signal: AbortSignal
+): Promise<FileRecord> {
+    const response = await authenticatedRequest(
+        getToken,
+        `/api/files/${encodeURIComponent(fileId)}/complete`,
+        { method: 'POST' },
+        signal,
+        'The uploaded file could not be verified.'
+    );
+    const value = await responseJson(response, 'The uploaded file could not be verified.');
+    if (typeof value !== 'object' || value === null) {
+        throw new FilesApiError('generic', 'The uploaded file could not be verified.');
+    }
+    const payload = value as Record<string, unknown>;
+    if (!hasOnlyKeys(payload, ['file']) || !isFileRecord(payload.file)) {
+        throw new FilesApiError('generic', 'The uploaded file could not be verified.');
+    }
+    return payload.file;
 }

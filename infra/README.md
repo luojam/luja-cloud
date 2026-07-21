@@ -1,19 +1,23 @@
 # Luja Cloud deployment runbook
 
-This CDK application deploys a private S3-hosted SPA behind CloudFront, Clerk-protected API Gateway routes backed by Lambda, and a DynamoDB file metadata catalog. The current backend is read-only: `GET /api/files` supplies the authenticated dashboard while upload and file mutations remain UI-first prototypes for later slices.
+This CDK application deploys a private S3-hosted SPA behind CloudFront, a separate private S3 user-file bucket, Clerk-protected API Gateway routes backed by Lambda, and a DynamoDB file metadata catalog. The dashboard lists ready metadata and uploads file bytes directly to S3 through short-lived signed URLs.
 
 ## API routes and file metadata
 
-All browser-facing backend routes use the `/api/*` namespace. CloudFront sends GET/HEAD requests under `/api/*` to API Gateway and all other routes to the frontend origin. The frontend uses same-origin paths rather than calling the API Gateway domain directly.
+All browser-facing backend routes use the `/api/*` namespace. CloudFront forwards API methods under `/api/*` to API Gateway while retaining disabled caching. The frontend uses same-origin paths rather than calling the API Gateway domain directly.
 
 The current authenticated routes are:
 
 - `GET /api/session` verifies the existing Clerk-backed session integration.
 - `GET /api/files` queries the signed-in user's catalog and returns `{ "files": [...] }`. Ownership comes only from the verified JWT `sub` claim; callers cannot choose an owner. The response includes only ready files and public fields (`fileId`, `name`, `mimeType`, `sizeBytes`, `createdAt`, and `modifiedAt`) and is marked `cache-control: no-store`.
+- `POST /api/files/uploads` validates metadata up to 100 MiB, creates a pending record, and returns a five-minute signed S3 PUT URL.
+- `POST /api/files/{id}/complete` verifies the private S3 object and its size, then conditionally transitions the owner's pending record to ready.
 
-The file metadata table uses `ownerId` (partition key) and `fileId` (sort key), on-demand billing, and no secondary indexes. Items also contain `objectKey` and a `pending` or `ready` status, but private storage fields are not returned by the list API. The list Lambda has read-only table permissions. There is no user-file S3 bucket in this slice.
+The file metadata table uses `ownerId` (partition key) and `fileId` (sort key), on-demand billing, and no secondary indexes. Items also contain `objectKey` and a `pending` or `ready` status, but private storage fields are not returned by the list API. Each Lambda has only the table and bucket operations required for its part of the flow.
 
-The dashboard loads this catalog from `/api/files`, including loading, authentication failure, retryable failure, empty, and populated states. Upload, selection, download, rename, delete, and bulk controls intentionally remain visible and interactive as UI prototypes; their backend operations will be connected incrementally.
+The user-file bucket blocks public access, uses S3-managed encryption, and has no website hosting. Upload CORS permits PUT with the `content-type` header from the Vite development/preview origins and the generated CloudFront application origin. A post-deployment custom resource applies the generated CloudFront origin without introducing a resource dependency cycle.
+
+The dashboard loads this catalog from `/api/files` and runs initiate → direct S3 PUT → complete for each selected file. Successful uploads trigger a catalog refetch. Failed files remain in the dialog for retry or removal. Download, rename, delete, and bulk backend operations remain later slices.
 
 ## Prerequisites
 
@@ -124,12 +128,13 @@ Use the CloudFront `ApplicationUrl` throughout. Use a new test user with no meta
 
     Confirm API Gateway returns `401`. Confirm in the list Lambda metrics that this rejected request caused no invocation.
 3. Complete a real Clerk sign-in and confirm navigation reaches `/dashboard`. In browser developer tools, confirm the authenticated `/api/files` request returns `200` with `{ "files": [] }`; do not copy its authorization header.
-4. Confirm the dashboard renders the real empty state while its upload and other UI-first file controls remain reachable. Refresh directly on `/dashboard` and confirm the SPA and empty catalog still load.
-5. In the DynamoDB console, find this stack's file metadata table. Add a test item whose `ownerId` is the signed-in test user's Clerk user ID, with a unique `fileId`, `status` set to `ready`, and valid `name`, `mimeType`, integer `sizeBytes`, `objectKey`, `createdAt`, and `modifiedAt` values. Refresh or refetch and confirm the public fields appear in the dashboard.
-6. Add one `pending` item for that owner and one `ready` item for a different owner. Refresh or refetch and confirm neither appears. Confirm `/api/files` responses do not expose `ownerId`, `objectKey`, or `status`.
-7. Sign out and confirm protected dashboard content is unavailable.
-8. If a step fails, inspect the API Gateway access log group and the relevant session or list-files Lambda log group. Logging is deliberately minimal and must not contain JWTs, authorization headers, file records, or object keys.
-9. Destroy the stack as described below. Confirm the frontend objects and bucket, auto-delete helper resources, both Lambdas, the file metadata table and its test records, HTTP API, CloudFront distribution, and disposable API/Lambda log groups are removed. CloudFront distribution deletion can take several minutes.
+4. Confirm the dashboard renders the real empty state. Upload a small file and an empty file together. In browser network tools, confirm each file's bytes go in a PUT request to S3, no Clerk `Authorization` header is sent to S3, and each completed file appears without refreshing. Reload `/dashboard` and confirm both remain listed.
+5. Select a file larger than 100 MiB and confirm the dialog rejects it before an upload-initiation API request occurs.
+6. Simulate a failed S3 PUT (for example, use browser request blocking for the S3 hostname). Confirm the failed file remains available for retry/removal and never appears in the list. A pending metadata record may remain until abandoned-upload cleanup is implemented.
+7. In the DynamoDB console, add one `pending` item for that owner and one `ready` item for a different owner. Refresh or refetch and confirm neither appears. Confirm `/api/files` responses do not expose `ownerId`, `objectKey`, or `status`.
+8. Sign out and confirm protected dashboard content is unavailable.
+9. If a step fails, inspect the API Gateway access log group and the relevant Lambda log group. Logging is deliberately minimal and must not contain JWTs, authorization headers, file records, object keys, or signed URLs.
+10. Destroy the stack as described below. Confirm the frontend and user-file buckets and objects, auto-delete helper resources, Lambdas, metadata table and records, HTTP API, CloudFront distribution, custom CORS resource, and disposable log groups are removed. CloudFront distribution deletion can take several minutes.
 
 ## Troubleshooting
 

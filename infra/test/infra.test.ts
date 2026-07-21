@@ -79,6 +79,84 @@ test('grants DynamoDB read access to the list Lambda without write actions', () 
     );
 });
 
+test('provisions a private encrypted destructively removed user-file bucket with PUT-only development CORS', () => {
+    const template = stackTemplate();
+
+    template.hasResource('AWS::S3::Bucket', {
+        DeletionPolicy: 'Delete',
+        UpdateReplacePolicy: 'Delete',
+        Properties: {
+            BucketEncryption: {
+                ServerSideEncryptionConfiguration: [
+                    { ServerSideEncryptionByDefault: { SSEAlgorithm: 'AES256' } },
+                ],
+            },
+            PublicAccessBlockConfiguration: {
+                BlockPublicAcls: true,
+                BlockPublicPolicy: true,
+                IgnorePublicAcls: true,
+                RestrictPublicBuckets: true,
+            },
+            CorsConfiguration: {
+                CorsRules: [
+                    {
+                        AllowedHeaders: ['content-type'],
+                        AllowedMethods: ['PUT'],
+                        AllowedOrigins: ['http://localhost:5173', 'http://localhost:4173'],
+                        MaxAge: 300,
+                    },
+                ],
+            },
+        },
+    });
+});
+
+test('registers authenticated upload POST routes and forwards mutating CloudFront methods', () => {
+    const template = stackTemplate();
+
+    for (const routeKey of ['POST /api/files/uploads', 'POST /api/files/{id}/complete']) {
+        template.hasResourceProperties('AWS::ApiGatewayV2::Route', {
+            RouteKey: routeKey,
+            AuthorizationType: 'JWT',
+            AuthorizerId: Match.anyValue(),
+        });
+    }
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+        DistributionConfig: {
+            CacheBehaviors: Match.arrayWith([
+                Match.objectLike({
+                    PathPattern: '/api/*',
+                    AllowedMethods: ['GET', 'HEAD', 'OPTIONS', 'PUT', 'PATCH', 'POST', 'DELETE'],
+                }),
+            ]),
+        },
+    });
+});
+
+test('grants upload handlers only their required file table and bucket actions', () => {
+    const template = stackTemplate();
+    const statements = Object.values(template.findResources('AWS::IAM::Policy')).flatMap(
+        (policy) => policy.Properties.PolicyDocument.Statement
+    );
+
+    expect(statements).toEqual(
+        expect.arrayContaining([
+            expect.objectContaining({ Action: 'dynamodb:PutItem', Resource: expect.anything() }),
+            expect.objectContaining({ Action: 's3:PutObject', Resource: expect.anything() }),
+            expect.objectContaining({
+                Action: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
+                Resource: expect.anything(),
+            }),
+            expect.objectContaining({ Action: 's3:GetObject', Resource: expect.anything() }),
+            expect.objectContaining({
+                Action: 's3:ListBucket',
+                Resource: expect.anything(),
+                Condition: { StringLike: { 's3:prefix': ['files/*'] } },
+            }),
+        ])
+    );
+});
+
 test('registers GET /api/files with the Clerk JWT authorizer', () => {
     const template = stackTemplate();
 

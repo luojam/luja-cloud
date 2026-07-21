@@ -1,5 +1,5 @@
 import { useAuth, useClerk } from '@clerk/react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 
 import { DashboardShell } from '@/components/dashboard/dashboard-shell';
@@ -13,8 +13,14 @@ import {
     EmptyHeader,
     EmptyTitle,
 } from '@/components/ui/empty';
-import { FilesApiError, listFiles } from '@/lib/files-api';
-import { UploadProvider } from '@/providers/upload-provider';
+import {
+    completeUpload,
+    FilesApiError,
+    initiateUpload,
+    listFiles,
+    putUpload,
+} from '@/lib/files-api';
+import { UploadProvider, type UploadBatchResult } from '@/providers/upload-provider';
 
 export const Route = createFileRoute('/_authenticated/dashboard')({
     component: DashboardPage,
@@ -23,8 +29,10 @@ export const Route = createFileRoute('/_authenticated/dashboard')({
 function DashboardPage() {
     const { getToken, sessionId, userId } = useAuth();
     const { signOut } = useClerk();
+    const queryClient = useQueryClient();
+    const filesQueryKey = ['files', userId, sessionId] as const;
     const filesQuery = useQuery({
-        queryKey: ['files', userId, sessionId],
+        queryKey: filesQueryKey,
         queryFn: ({ signal }) => listFiles(getToken, signal),
         enabled: Boolean(userId && sessionId),
         retry: (failureCount, error) =>
@@ -34,8 +42,34 @@ function DashboardPage() {
     const isAuthenticationFailure =
         filesQuery.error instanceof FilesApiError && filesQuery.error.kind === 'authentication';
 
+    async function uploadFiles(files: File[]): Promise<UploadBatchResult> {
+        const uploadedFiles: File[] = [];
+        let errorMessage: string | undefined;
+
+        for (const file of files) {
+            const controller = new AbortController();
+            try {
+                const upload = await initiateUpload(getToken, file, controller.signal);
+                await putUpload(upload.uploadUrl, file, controller.signal);
+                await completeUpload(getToken, upload.fileId, controller.signal);
+                uploadedFiles.push(file);
+            } catch (error) {
+                errorMessage =
+                    error instanceof FilesApiError
+                        ? error.message
+                        : `Unable to upload ${file.name}.`;
+                if (error instanceof FilesApiError && error.kind === 'authentication') break;
+            }
+        }
+
+        if (uploadedFiles.length) {
+            await queryClient.invalidateQueries({ queryKey: filesQueryKey });
+        }
+        return { uploadedFiles, error: errorMessage };
+    }
+
     return (
-        <UploadProvider>
+        <UploadProvider onUpload={uploadFiles}>
             <DashboardShell>
                 {filesQuery.isPending ? (
                     <FileListSkeleton />
