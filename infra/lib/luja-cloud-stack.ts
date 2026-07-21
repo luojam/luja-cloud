@@ -7,6 +7,7 @@ import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as cdk from 'aws-cdk-lib/core';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deployment from 'aws-cdk-lib/aws-s3-deployment';
@@ -22,6 +23,13 @@ export class LujaCloudStack extends cdk.Stack {
     constructor(scope: Construct, id: string, props: LujaCloudStackProps) {
         super(scope, id, props);
 
+        const filesTable = new dynamodb.Table(this, 'FilesTable', {
+            partitionKey: { name: 'ownerId', type: dynamodb.AttributeType.STRING },
+            sortKey: { name: 'fileId', type: dynamodb.AttributeType.STRING },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+
         const sessionLogGroup = new logs.LogGroup(this, 'SessionFunctionLogs', {
             retention: logs.RetentionDays.ONE_WEEK,
             removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -34,6 +42,22 @@ export class LujaCloudStack extends cdk.Stack {
             logGroup: sessionLogGroup,
         });
 
+        const listFilesLogGroup = new logs.LogGroup(this, 'ListFilesFunctionLogs', {
+            retention: logs.RetentionDays.ONE_WEEK,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+
+        const listFilesFunction = new lambdaNodejs.NodejsFunction(this, 'ListFilesFunction', {
+            entry: path.join(__dirname, '..', 'functions', 'list-files.ts'),
+            handler: 'handler',
+            runtime: lambda.Runtime.NODEJS_22_X,
+            logGroup: listFilesLogGroup,
+            environment: {
+                FILES_TABLE_NAME: filesTable.tableName,
+            },
+        });
+        filesTable.grantReadData(listFilesFunction);
+
         const api = new apigatewayv2.HttpApi(this, 'SessionApi');
         const authorizer = new HttpJwtAuthorizer('ClerkJwtAuthorizer', props.clerkIssuer, {
             identitySource: ['$request.header.Authorization'],
@@ -44,6 +68,13 @@ export class LujaCloudStack extends cdk.Stack {
             path: '/api/session',
             methods: [apigatewayv2.HttpMethod.GET],
             integration: new HttpLambdaIntegration('SessionIntegration', sessionFunction),
+            authorizer,
+        });
+
+        api.addRoutes({
+            path: '/api/files',
+            methods: [apigatewayv2.HttpMethod.GET],
+            integration: new HttpLambdaIntegration('ListFilesIntegration', listFilesFunction),
             authorizer,
         });
 
