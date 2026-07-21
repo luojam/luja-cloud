@@ -1,16 +1,17 @@
-# Luja Cloud
+# luja Cloud
 
-## Development
+A minimal React, Clerk, and AWS CDK walking skeleton for verifying an authenticated browser session at the backend.
 
-```sh
-npm install
-npm run dev
-```
+## Documentation
 
-## Shadcn preset
+- [Implementation plan and tickets](PLAN.md)
+- [Deployment and operations runbook](infra/README.md)
+- [Architecture](docs/architecture.md)
 
---preset b5dfpd39m
+## Repository structure
 
-## Update shadcn preset
+- `frontend/` — React and Vite application
+- `infra/` — AWS CDK application and backend handler
+- `docs/` — architecture and project documentation
 
-npx shadcn@latest apply --preset b5clZe6p0
+See the deployment runbook for Clerk/AWS configuration, build and deployment commands, smoke testing, troubleshooting, and cleanup.
