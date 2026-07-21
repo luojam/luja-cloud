@@ -1,10 +1,19 @@
 # Luja Cloud deployment runbook
 
-This CDK application deploys the complete walking skeleton: a private S3-hosted SPA behind CloudFront and a Clerk-protected `GET /api/session` route backed by API Gateway and Lambda.
+This CDK application deploys a private S3-hosted SPA behind CloudFront, Clerk-protected API Gateway routes backed by Lambda, and a DynamoDB file metadata catalog. The current backend is read-only: `GET /api/files` supplies the authenticated dashboard while upload and file mutations remain UI-first prototypes for later slices.
 
-## API route convention
+## API routes and file metadata
 
-All browser-facing backend routes use the `/api/*` namespace. CloudFront sends `/api/*` requests to API Gateway and all other routes to the frontend origin. The frontend should use same-origin paths such as `/api/session` and `/api/files` rather than calling the API Gateway domain directly.
+All browser-facing backend routes use the `/api/*` namespace. CloudFront sends GET/HEAD requests under `/api/*` to API Gateway and all other routes to the frontend origin. The frontend uses same-origin paths rather than calling the API Gateway domain directly.
+
+The current authenticated routes are:
+
+- `GET /api/session` verifies the existing Clerk-backed session integration.
+- `GET /api/files` queries the signed-in user's catalog and returns `{ "files": [...] }`. Ownership comes only from the verified JWT `sub` claim; callers cannot choose an owner. The response includes only ready files and public fields (`fileId`, `name`, `mimeType`, `sizeBytes`, `createdAt`, and `modifiedAt`) and is marked `cache-control: no-store`.
+
+The file metadata table uses `ownerId` (partition key) and `fileId` (sort key), on-demand billing, and no secondary indexes. Items also contain `objectKey` and a `pending` or `ready` status, but private storage fields are not returned by the list API. The list Lambda has read-only table permissions. There is no user-file S3 bucket in this slice.
+
+The dashboard loads this catalog from `/api/files`, including loading, authentication failure, retryable failure, empty, and populated states. Upload, selection, download, rename, delete, and bulk controls intentionally remain visible and interactive as UI prototypes; their backend operations will be connected incrementally.
 
 ## Prerequisites
 
@@ -104,23 +113,23 @@ Use `ApplicationUrl` for the application and for all browser/API smoke tests. De
 
 ## Manual smoke test
 
-1. Open the generated `ApplicationUrl` in a signed-out browser.
-2. Navigate to `/dashboard` and confirm it does not reveal authenticated content.
-3. Complete a real Clerk sign-in.
-4. Confirm navigation reaches `/dashboard`.
-5. Confirm **Backend session verified** is visible.
-6. Refresh the browser directly on `/dashboard`; confirm the SPA loads and backend verification still succeeds.
-7. Make an unauthenticated request through CloudFront:
+Use the CloudFront `ApplicationUrl` throughout. Use a new test user with no metadata, and use the DynamoDB console for test records so a Clerk token never enters shell history, logs, source files, tickets, or documentation.
+
+1. Open `ApplicationUrl` in a signed-out browser. Navigate to `/dashboard` and confirm it does not reveal authenticated content.
+2. Request `GET /api/files` without credentials:
 
     ```sh
-    curl -i https://<distribution-domain>.cloudfront.net/api/session
+    curl -i https://<distribution-domain>.cloudfront.net/api/files
     ```
 
-    Confirm API Gateway returns `401`. Because authorization happens at API Gateway, this request must not create a corresponding session Lambda invocation.
-
-8. Sign out and confirm protected dashboard content is unavailable.
-9. If any step fails, inspect the API Gateway access log group and session Lambda log group in CloudWatch for this stack. The access log is deliberately minimal and neither log should contain a JWT. Never paste a token into logs, commands, tickets, or chat.
-10. Destroy the stack as described below. Confirm the frontend objects and bucket, auto-delete helper resources, session Lambda, HTTP API, CloudFront distribution, and disposable API/Lambda log groups are removed. CloudFront distribution deletion can take several minutes.
+    Confirm API Gateway returns `401`. Confirm in the list Lambda metrics that this rejected request caused no invocation.
+3. Complete a real Clerk sign-in and confirm navigation reaches `/dashboard`. In browser developer tools, confirm the authenticated `/api/files` request returns `200` with `{ "files": [] }`; do not copy its authorization header.
+4. Confirm the dashboard renders the real empty state while its upload and other UI-first file controls remain reachable. Refresh directly on `/dashboard` and confirm the SPA and empty catalog still load.
+5. In the DynamoDB console, find this stack's file metadata table. Add a test item whose `ownerId` is the signed-in test user's Clerk user ID, with a unique `fileId`, `status` set to `ready`, and valid `name`, `mimeType`, integer `sizeBytes`, `objectKey`, `createdAt`, and `modifiedAt` values. Refresh or refetch and confirm the public fields appear in the dashboard.
+6. Add one `pending` item for that owner and one `ready` item for a different owner. Refresh or refetch and confirm neither appears. Confirm `/api/files` responses do not expose `ownerId`, `objectKey`, or `status`.
+7. Sign out and confirm protected dashboard content is unavailable.
+8. If a step fails, inspect the API Gateway access log group and the relevant session or list-files Lambda log group. Logging is deliberately minimal and must not contain JWTs, authorization headers, file records, or object keys.
+9. Destroy the stack as described below. Confirm the frontend objects and bucket, auto-delete helper resources, both Lambdas, the file metadata table and its test records, HTTP API, CloudFront distribution, and disposable API/Lambda log groups are removed. CloudFront distribution deletion can take several minutes.
 
 ## Troubleshooting
 
@@ -155,4 +164,4 @@ Keep both `.env` files available because CDK synthesizes the application before 
 AWS_PROFILE=<profile> npm run destroy
 ```
 
-The script compiles both projects so synthesis works in a clean checkout, then runs the repository-local `cdk destroy --force`. For the current development stage, all stack-owned resources use destructive removal policies; buckets are emptied automatically where necessary. Wait for CloudFormation and CloudFront deletion to finish, and verify stack deletion and resource cleanup in the selected account and region.
+The script compiles both projects so synthesis works in a clean checkout, then runs the repository-local `cdk destroy --force`. For the current development stage, all stack-owned resources use destructive removal policies: buckets are emptied automatically, and the file metadata table and all catalog records are permanently deleted. Wait for CloudFormation and CloudFront deletion to finish, and verify stack deletion and resource cleanup in the selected account and region.
