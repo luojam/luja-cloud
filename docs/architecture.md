@@ -78,17 +78,21 @@ modifiedAt
 
 The exact DynamoDB key design can be selected during implementation.
 
+## API route convention
+
+All browser-facing backend routes use the `/api/*` namespace. CloudFront routes that namespace to API Gateway while serving the React application for other paths. The browser uses same-origin API paths in both local and deployed environments.
+
 ## Private file operations
 
 The first backend API should support:
 
 ```text
-GET    /files
-POST   /files/uploads
-POST   /files/{id}/complete
-GET    /files/{id}/download
-PATCH  /files/{id}
-DELETE /files/{id}
+GET    /api/files
+POST   /api/files/uploads
+POST   /api/files/{id}/complete
+GET    /api/files/{id}/download
+PATCH  /api/files/{id}
+DELETE /api/files/{id}
 ```
 
 Every private operation checks that the authenticated Clerk user owns the requested file.
@@ -209,5 +213,6 @@ flowchart LR
 - Sharing is manually toggled per file. Sharing links do not expire automatically and remain valid until the owner disables sharing or deletes the file.
 - Each file can have at most one active sharing link.
 - The CDK stack deploys the React application using a dedicated S3 bucket and CloudFront distribution alongside the backend.
+- During the current development stage, all stack-owned resources use destructive removal policies. Buckets are emptied automatically so destroying the stack also deletes stored objects and metadata.
 
 There are no outstanding decisions from the initial architecture outline.

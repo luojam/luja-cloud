@@ -1,12 +1,13 @@
 # luja Cloud
 
-A minimal React, Clerk, and AWS CDK walking skeleton for verifying an authenticated browser session at the backend.
+A personal file vault built with React, Clerk, and AWS serverless services.
 
 ## Documentation
 
-- [Implementation plan and tickets](PLAN.md)
-- [Deployment and operations runbook](infra/README.md)
 - [Architecture](docs/architecture.md)
+- [Deployment and operations runbook](infra/README.md)
+
+Browser-facing backend routes use the `/api/*` namespace and are served through the same CloudFront domain as the frontend.
 
 ## Repository structure
 

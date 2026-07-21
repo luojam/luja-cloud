@@ -11,7 +11,7 @@ VITE_CLERK_PUBLISHABLE_KEY=<Clerk publishable key>
 API_PROXY_TARGET=<deployed API Gateway or CloudFront origin>
 ```
 
-`API_PROXY_TARGET` must be an origin such as `https://abc.execute-api.us-east-1.amazonaws.com` (without `/api/session`). It is read only by Vite and proxies local `/api/*` requests; deployed requests remain same-origin through CloudFront.
+`API_PROXY_TARGET` must be an origin such as `https://abc.execute-api.us-east-1.amazonaws.com`, without an `/api` path suffix. It is read only by Vite and proxies local `/api/*` requests; deployed requests remain same-origin through CloudFront. All browser-facing backend routes use the `/api/*` namespace.
 
 The API authorizer requires `aud: "luja-cloud-api"`. In Clerk, customize the normal session token under **Sessions → Customize session token** to include:
 

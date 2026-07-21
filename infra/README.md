@@ -2,6 +2,10 @@
 
 This CDK application deploys the complete walking skeleton: a private S3-hosted SPA behind CloudFront and a Clerk-protected `GET /api/session` route backed by API Gateway and Lambda.
 
+## API route convention
+
+All browser-facing backend routes use the `/api/*` namespace. CloudFront sends `/api/*` requests to API Gateway and all other routes to the frontend origin. The frontend should use same-origin paths such as `/api/session` and `/api/files` rather than calling the API Gateway domain directly.
+
 ## Prerequisites
 
 - Node.js 22 LTS or a newer supported Node.js release, with npm. Confirm with `node --version` and `npm --version`.
@@ -151,4 +155,4 @@ Keep both `.env` files available because CDK synthesizes the application before 
 AWS_PROFILE=<profile> npm run destroy
 ```
 
-The script compiles both projects so synthesis works in a clean checkout, then runs the repository-local `cdk destroy --force`. Wait for CloudFormation and CloudFront deletion to finish, and verify stack deletion in the selected account and region.
+The script compiles both projects so synthesis works in a clean checkout, then runs the repository-local `cdk destroy --force`. For the current development stage, all stack-owned resources use destructive removal policies; buckets are emptied automatically where necessary. Wait for CloudFormation and CloudFront deletion to finish, and verify stack deletion and resource cleanup in the selected account and region.
