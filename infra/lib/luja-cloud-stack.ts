@@ -106,6 +106,33 @@ export class LujaCloudStack extends cdk.Stack {
             })
         );
 
+        const downloadFileLogGroup = new logs.LogGroup(this, 'DownloadFileFunctionLogs', {
+            retention: logs.RetentionDays.ONE_WEEK,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+        const downloadFileFunction = new lambdaNodejs.NodejsFunction(this, 'DownloadFileFunction', {
+            entry: path.join(__dirname, '..', 'functions', 'download-file.ts'),
+            handler: 'handler',
+            runtime: lambda.Runtime.NODEJS_22_X,
+            logGroup: downloadFileLogGroup,
+            environment: {
+                FILES_TABLE_NAME: filesTable.tableName,
+                FILES_BUCKET_NAME: userFilesBucket.bucketName,
+            },
+        });
+        downloadFileFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['dynamodb:GetItem'],
+                resources: [filesTable.tableArn],
+            })
+        );
+        downloadFileFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['s3:GetObject'],
+                resources: [userFilesBucket.arnForObjects('files/*')],
+            })
+        );
+
         const completeUploadLogGroup = new logs.LogGroup(this, 'CompleteUploadFunctionLogs', {
             retention: logs.RetentionDays.ONE_WEEK,
             removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -173,6 +200,13 @@ export class LujaCloudStack extends cdk.Stack {
                 'InitiateUploadIntegration',
                 initiateUploadFunction
             ),
+            authorizer,
+        });
+
+        api.addRoutes({
+            path: '/api/files/{id}/download',
+            methods: [apigatewayv2.HttpMethod.GET],
+            integration: new HttpLambdaIntegration('DownloadFileIntegration', downloadFileFunction),
             authorizer,
         });
 

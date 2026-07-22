@@ -24,14 +24,18 @@ import {
 
 type FileActionsDropdownProps = {
     fileName: string;
+    isDownloading: boolean;
     onDelete: () => void;
+    onDownload: () => void;
     onOpen: () => void;
     onRename: () => void;
 };
 
 export function FileActionsDropdown({
     fileName,
+    isDownloading,
     onDelete,
+    onDownload,
     onOpen,
     onRename,
 }: FileActionsDropdownProps) {
@@ -50,7 +54,7 @@ export function FileActionsDropdown({
             </DropdownMenuTrigger>
             <DropdownMenuContent className='w-40' align='end'>
                 <DropdownMenuGroup>
-                    <DropdownMenuItem>
+                    <DropdownMenuItem disabled={isDownloading} onClick={onDownload}>
                         <HugeiconsIcon icon={Download04Icon} strokeWidth={1.8} />
                         Download
                     </DropdownMenuItem>
@@ -72,15 +76,22 @@ export function FileActionsDropdown({
 }
 
 type FileActionsContextMenuProps = {
+    isDownloading: boolean;
     onDelete: () => void;
+    onDownload: () => void;
     onRename: () => void;
 };
 
-export function FileActionsContextMenu({ onDelete, onRename }: FileActionsContextMenuProps) {
+export function FileActionsContextMenu({
+    isDownloading,
+    onDelete,
+    onDownload,
+    onRename,
+}: FileActionsContextMenuProps) {
     return (
         <ContextMenuContent className='w-40'>
             <ContextMenuGroup>
-                <ContextMenuItem>
+                <ContextMenuItem disabled={isDownloading} onClick={onDownload}>
                     <HugeiconsIcon icon={Download04Icon} strokeWidth={1.8} />
                     Download
                 </ContextMenuItem>

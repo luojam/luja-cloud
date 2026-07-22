@@ -12,12 +12,13 @@ The current authenticated routes are:
 - `GET /api/files` queries the signed-in user's catalog and returns `{ "files": [...] }`. Ownership comes only from the verified JWT `sub` claim; callers cannot choose an owner. The response includes only ready files and public fields (`fileId`, `name`, `mimeType`, `sizeBytes`, `createdAt`, and `modifiedAt`) and is marked `cache-control: no-store`.
 - `POST /api/files/uploads` validates metadata up to 100 MiB, creates a pending record, and returns a five-minute signed S3 PUT URL.
 - `POST /api/files/{id}/complete` verifies the private S3 object and its size, then conditionally transitions the owner's pending record to ready.
+- `GET /api/files/{id}/download` returns only a five-minute presigned S3 GET URL for the signed-in owner's ready record. Missing, pending, and non-owned files all return the same `404`. The signed response forces the metadata MIME type and a safely encoded attachment filename.
 
 The file metadata table uses `ownerId` (partition key) and `fileId` (sort key), on-demand billing, and no secondary indexes. Items also contain `objectKey` and a `pending` or `ready` status, but private storage fields are not returned by the list API. Each Lambda has only the table and bucket operations required for its part of the flow.
 
 The user-file bucket blocks public access, uses S3-managed encryption, and has no website hosting. Upload CORS permits PUT with the `content-type` header from the Vite development/preview origins and the generated CloudFront application origin. A post-deployment custom resource applies the generated CloudFront origin without introducing a resource dependency cycle.
 
-The dashboard loads this catalog from `/api/files` and runs initiate → direct S3 PUT → complete for each selected file. Successful uploads trigger a catalog refetch. Failed files remain in the dialog for retry or removal. Download, rename, delete, and bulk backend operations remain later slices.
+The dashboard loads this catalog from `/api/files` and runs initiate → direct S3 PUT → complete for each selected file. Successful uploads trigger a catalog refetch. Failed files remain in the dialog for retry or removal. Row menus download one file, while the toolbar prepares one short-lived link per selected file for the user to click individually; bytes travel directly from private S3 to the browser and presigned URLs are not cached or persisted. Rename, delete, and bulk backend operations remain later slices.
 
 ## Prerequisites
 
@@ -127,14 +128,18 @@ Use the CloudFront `ApplicationUrl` throughout. Use a new test user with no meta
     ```
 
     Confirm API Gateway returns `401`. Confirm in the list Lambda metrics that this rejected request caused no invocation.
+
 3. Complete a real Clerk sign-in and confirm navigation reaches `/dashboard`. In browser developer tools, confirm the authenticated `/api/files` request returns `200` with `{ "files": [] }`; do not copy its authorization header.
 4. Confirm the dashboard renders the real empty state. Upload a small file and an empty file together. In browser network tools, confirm each file's bytes go in a PUT request to S3, no Clerk `Authorization` header is sent to S3, and each completed file appears without refreshing. Reload `/dashboard` and confirm both remain listed.
 5. Select a file larger than 100 MiB and confirm the dialog rejects it before an upload-initiation API request occurs.
 6. Simulate a failed S3 PUT (for example, use browser request blocking for the S3 hostname). Confirm the failed file remains available for retry/removal and never appears in the list. A pending metadata record may remain until abandoned-upload cleanup is implemented.
 7. In the DynamoDB console, add one `pending` item for that owner and one `ready` item for a different owner. Refresh or refetch and confirm neither appears. Confirm `/api/files` responses do not expose `ownerId`, `objectKey`, or `status`.
-8. Sign out and confirm protected dashboard content is unavailable.
-9. If a step fails, inspect the API Gateway access log group and the relevant Lambda log group. Logging is deliberately minimal and must not contain JWTs, authorization headers, file records, object keys, or signed URLs.
-10. Destroy the stack as described below. Confirm the frontend and user-file buckets and objects, auto-delete helper resources, Lambdas, metadata table and records, HTTP API, CloudFront distribution, custom CORS resource, and disposable log groups are removed. CloudFront distribution deletion can take several minutes.
+8. Download an uploaded file from its row menu and confirm its original bytes and visible filename. Select multiple files, use the toolbar Download button, and confirm the dialog provides one working link per successfully prepared file. In browser network tools, confirm the API request has the Clerk token but the S3 GET does not.
+9. Copy neither token nor presigned URL. Using a second signed-in test user, request the first user's file ID through the UI/browser console and confirm the API returns the same `404` as a missing ID. Request the S3 object URL without its signed query string and confirm access is denied. Request `/api/files/<id>/download` signed out and confirm API Gateway returns `401` without invoking the download Lambda.
+10. Confirm download API responses have `cache-control: no-store`, contain only `downloadUrl`, and that application/API logs contain no presigned URLs.
+11. Sign out and confirm protected dashboard content is unavailable.
+12. If a step fails, inspect the API Gateway access log group and the relevant Lambda log group. Logging is deliberately minimal and must not contain JWTs, authorization headers, file records, object keys, or signed URLs.
+13. Destroy the stack as described below. Confirm the frontend and user-file buckets and objects, auto-delete helper resources, Lambdas, metadata table and records, HTTP API, CloudFront distribution, custom CORS resource, and disposable log groups are removed. CloudFront distribution deletion can take several minutes.
 
 ## Troubleshooting
 

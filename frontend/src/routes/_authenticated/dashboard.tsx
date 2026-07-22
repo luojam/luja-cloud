@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 
 import { DashboardShell } from '@/components/dashboard/dashboard-shell';
-import { FileList } from '@/components/dashboard/file-list';
+import type { PreparedDownload } from '@/components/dashboard/download-files-dialog';
+import { FileList, type DownloadBatchResult } from '@/components/dashboard/file-list';
 import { FileListSkeleton } from '@/components/dashboard/file-list-skeleton';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,10 +17,12 @@ import {
 import {
     completeUpload,
     FilesApiError,
+    getDownloadUrl,
     initiateUpload,
     listFiles,
     putUpload,
 } from '@/lib/files-api';
+import type { FileRecord } from '@/lib/files';
 import { UploadProvider, type UploadBatchResult } from '@/providers/upload-provider';
 
 export const Route = createFileRoute('/_authenticated/dashboard')({
@@ -41,6 +44,27 @@ function DashboardPage() {
 
     const isAuthenticationFailure =
         filesQuery.error instanceof FilesApiError && filesQuery.error.kind === 'authentication';
+
+    async function downloadFiles(files: FileRecord[]): Promise<DownloadBatchResult> {
+        const controller = new AbortController();
+        const downloads: PreparedDownload[] = [];
+
+        for (const file of files) {
+            try {
+                const downloadUrl = await getDownloadUrl(
+                    getToken,
+                    file.fileId,
+                    file.name,
+                    controller.signal
+                );
+                downloads.push({ fileId: file.fileId, fileName: file.name, downloadUrl });
+            } catch {
+                // Continue so one failed URL does not prevent preparing the remaining downloads.
+            }
+        }
+
+        return { downloads, failed: files.length - downloads.length };
+    }
 
     async function uploadFiles(files: File[]): Promise<UploadBatchResult> {
         const uploadedFiles: File[] = [];
@@ -100,7 +124,7 @@ function DashboardPage() {
                         </EmptyContent>
                     </Empty>
                 ) : (
-                    <FileList files={filesQuery.data} />
+                    <FileList files={filesQuery.data} onDownload={downloadFiles} />
                 )}
             </DashboardShell>
         </UploadProvider>

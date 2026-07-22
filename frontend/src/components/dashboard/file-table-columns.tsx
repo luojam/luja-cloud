@@ -31,7 +31,9 @@ declare module '@tanstack/react-table' {
 
     // Table metadata connects row actions to list-level dialogs.
     interface TableMeta<TData extends RowData> {
+        isDownloading?: boolean;
         onDelete?: (files: TData[]) => void;
+        onDownload?: (files: TData[]) => void;
         onRename?: (file: TData) => void;
     }
 }
@@ -155,7 +157,9 @@ export const fileTableColumns: ColumnDef<FileRecord>[] = [
         cell: ({ row, table }) => (
             <FileActionsDropdown
                 fileName={row.original.name}
+                isDownloading={table.options.meta?.isDownloading ?? false}
                 onDelete={() => table.options.meta?.onDelete?.([row.original])}
+                onDownload={() => table.options.meta?.onDownload?.([row.original])}
                 onOpen={() => table.resetRowSelection()}
                 onRename={() => table.options.meta?.onRename?.(row.original)}
             />

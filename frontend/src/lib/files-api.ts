@@ -73,6 +73,24 @@ function parseFilesPayload(value: unknown): FileRecord[] {
     return payload.files;
 }
 
+function parseDownloadUrl(value: unknown, fileName: string): string {
+    if (typeof value !== 'object' || value === null) {
+        throw new FilesApiError('generic', `Unable to download ${fileName}.`);
+    }
+    const payload = value as Record<string, unknown>;
+    if (!hasOnlyKeys(payload, ['downloadUrl']) || !isNonEmptyString(payload.downloadUrl)) {
+        throw new FilesApiError('generic', `Unable to download ${fileName}.`);
+    }
+
+    try {
+        const url = new URL(payload.downloadUrl);
+        if (url.protocol !== 'https:') throw new Error();
+    } catch {
+        throw new FilesApiError('generic', `Unable to download ${fileName}.`);
+    }
+    return payload.downloadUrl;
+}
+
 function parseInitiatedUpload(value: unknown): InitiatedUpload {
     if (typeof value !== 'object' || value === null) {
         throw new FilesApiError('generic', 'Unable to start the upload.');
@@ -155,6 +173,23 @@ export async function listFiles(getToken: GetToken, signal: AbortSignal): Promis
         'Unable to load files.'
     );
     return parseFilesPayload(await responseJson(response, 'Unable to load files.'));
+}
+
+export async function getDownloadUrl(
+    getToken: GetToken,
+    fileId: string,
+    fileName: string,
+    signal: AbortSignal
+): Promise<string> {
+    const failureMessage = `Unable to download ${fileName}.`;
+    const response = await authenticatedRequest(
+        getToken,
+        `/api/files/${encodeURIComponent(fileId)}/download`,
+        { method: 'GET' },
+        signal,
+        failureMessage
+    );
+    return parseDownloadUrl(await responseJson(response, failureMessage), fileName);
 }
 
 export async function initiateUpload(

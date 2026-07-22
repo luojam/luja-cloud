@@ -157,6 +157,68 @@ test('grants upload handlers only their required file table and bucket actions',
     );
 });
 
+test('registers authenticated download GET route', () => {
+    const template = stackTemplate();
+
+    template.hasResourceProperties('AWS::ApiGatewayV2::Route', {
+        RouteKey: 'GET /api/files/{id}/download',
+        AuthorizationType: 'JWT',
+        AuthorizerId: Match.anyValue(),
+    });
+});
+
+test('configures the download Lambda with one-week destructible logs', () => {
+    const template = stackTemplate();
+    const functions = template.findResources('AWS::Lambda::Function');
+    const downloadFunction = Object.entries(functions).find(([logicalId]) =>
+        logicalId.includes('DownloadFileFunction')
+    )?.[1];
+    expect(downloadFunction).toBeDefined();
+
+    const logGroupReference = downloadFunction?.Properties.LoggingConfig.LogGroup.Ref;
+    const logGroup = template.findResources('AWS::Logs::LogGroup')[logGroupReference];
+    expect(logGroup).toEqual(
+        expect.objectContaining({
+            DeletionPolicy: 'Delete',
+            UpdateReplacePolicy: 'Delete',
+            Properties: { RetentionInDays: 7 },
+        })
+    );
+});
+
+test('gives the download handler read-only metadata and object-prefix access', () => {
+    const template = stackTemplate();
+    const downloadPolicies = Object.entries(template.findResources('AWS::IAM::Policy'))
+        .filter(([logicalId]) => logicalId.includes('DownloadFileFunction'))
+        .flatMap(([, policy]) => policy.Properties.PolicyDocument.Statement);
+    const actions = downloadPolicies.flatMap((statement: { Action: string | string[] }) =>
+        Array.isArray(statement.Action) ? statement.Action : [statement.Action]
+    );
+
+    expect(downloadPolicies).toEqual(
+        expect.arrayContaining([
+            expect.objectContaining({ Action: 'dynamodb:GetItem' }),
+            expect.objectContaining({
+                Action: 's3:GetObject',
+                Resource: expect.objectContaining({ 'Fn::Join': expect.anything() }),
+            }),
+        ])
+    );
+    const getObjectStatement = downloadPolicies.find(
+        (statement: { Action: string | string[] }) => statement.Action === 's3:GetObject'
+    );
+    expect(JSON.stringify(getObjectStatement?.Resource)).toContain('/files/*');
+    expect(actions).not.toEqual(
+        expect.arrayContaining([
+            'dynamodb:PutItem',
+            'dynamodb:UpdateItem',
+            'dynamodb:DeleteItem',
+            's3:PutObject',
+            's3:DeleteObject',
+        ])
+    );
+});
+
 test('registers GET /api/files with the Clerk JWT authorizer', () => {
     const template = stackTemplate();
 

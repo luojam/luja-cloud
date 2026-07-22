@@ -7,9 +7,13 @@ import {
     useReactTable,
 } from '@tanstack/react-table';
 import type { RowSelectionState, SortingState } from '@tanstack/react-table';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { DeleteFilesDialog } from '@/components/dashboard/delete-files-dialog';
+import {
+    DownloadFilesDialog,
+    type PreparedDownload,
+} from '@/components/dashboard/download-files-dialog';
 import { FileActionsContextMenu } from '@/components/dashboard/file-actions';
 import { fileTableColumns } from '@/components/dashboard/file-table-columns';
 import { RenameFileDialog } from '@/components/dashboard/rename-file-dialog';
@@ -17,6 +21,7 @@ import { useUpload } from '@/contexts/upload-context';
 import { Button } from '@/components/ui/button';
 import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
+import { Spinner } from '@/components/ui/spinner';
 import {
     Table,
     TableBody,
@@ -28,9 +33,15 @@ import {
 import type { FileRecord } from '@/lib/files';
 import { cn } from '@/lib/utils';
 
+export type DownloadBatchResult = {
+    downloads: PreparedDownload[];
+    failed: number;
+};
+
 type FileListProps = {
     files: FileRecord[];
     onDelete?: (files: FileRecord[]) => void;
+    onDownload?: (files: FileRecord[]) => Promise<DownloadBatchResult>;
     onRename?: (file: FileRecord, fileName: string) => void;
 };
 
@@ -40,12 +51,16 @@ function getAriaSort(direction: false | 'asc' | 'desc') {
     return 'none';
 }
 
-export function FileList({ files, onDelete, onRename }: FileListProps) {
+export function FileList({ files, onDelete, onDownload, onRename }: FileListProps) {
     const { selectFiles } = useUpload();
     const [sorting, setSorting] = useState<SortingState>([{ id: 'modifiedAt', desc: true }]);
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
     const [filesToDelete, setFilesToDelete] = useState<FileRecord[]>([]);
     const [fileToRename, setFileToRename] = useState<FileRecord | null>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
+    const [downloadStatus, setDownloadStatus] = useState('');
+    const [preparedDownloads, setPreparedDownloads] = useState<PreparedDownload[]>([]);
+    const downloadInProgress = useRef(false);
     // TanStack exposes mutable table APIs, so the React compiler safely skips this hook.
     // eslint-disable-next-line react-hooks/incompatible-library
     const table = useReactTable({
@@ -56,13 +71,60 @@ export function FileList({ files, onDelete, onRename }: FileListProps) {
         onRowSelectionChange: setRowSelection,
         enableRowSelection: true,
         getRowId: (file) => file.fileId,
-        meta: { onDelete: setFilesToDelete, onRename: setFileToRename },
+        meta: {
+            isDownloading,
+            onDelete: setFilesToDelete,
+            onDownload: (selectedFiles) => void downloadFiles(selectedFiles),
+            onRename: setFileToRename,
+        },
         getCoreRowModel: getCoreRowModel(),
         getSortedRowModel: getSortedRowModel(),
     });
     const fileLabel = files.length === 1 ? 'file' : 'files';
     const selectedFiles = table.getSelectedRowModel().rows.map((row) => row.original);
     const selectedCount = selectedFiles.length;
+
+    async function downloadFiles(selectedFiles: FileRecord[]) {
+        if (downloadInProgress.current || !onDownload || selectedFiles.length === 0) return;
+
+        downloadInProgress.current = true;
+        setIsDownloading(true);
+        setDownloadStatus(
+            `Preparing ${selectedFiles.length} ${selectedFiles.length === 1 ? 'download' : 'downloads'}…`
+        );
+        try {
+            const result = await onDownload(selectedFiles);
+            const succeeded = result.downloads.length;
+
+            if (selectedFiles.length === 1 && succeeded === 1) {
+                const anchor = document.createElement('a');
+                anchor.href = result.downloads[0].downloadUrl;
+                document.body.append(anchor);
+                try {
+                    anchor.click();
+                } finally {
+                    anchor.remove();
+                }
+                setDownloadStatus('Download requested.');
+            } else if (succeeded > 0) {
+                setPreparedDownloads(result.downloads);
+                setDownloadStatus(
+                    result.failed === 0
+                        ? `${succeeded} ${succeeded === 1 ? 'download is' : 'downloads are'} ready.`
+                        : `${succeeded} ${succeeded === 1 ? 'download is' : 'downloads are'} ready; ${result.failed} ${result.failed === 1 ? 'file' : 'files'} could not be prepared.`
+                );
+            } else {
+                setDownloadStatus(
+                    `Unable to prepare ${result.failed} ${result.failed === 1 ? 'download' : 'downloads'}.`
+                );
+            }
+        } catch {
+            setDownloadStatus('Unable to prepare the download. Please try again.');
+        } finally {
+            downloadInProgress.current = false;
+            setIsDownloading(false);
+        }
+    }
 
     function confirmDelete() {
         onDelete?.(filesToDelete);
@@ -89,9 +151,22 @@ export function FileList({ files, onDelete, onRename }: FileListProps) {
                     </span>
                 </div>
                 <div className='flex items-center gap-2'>
-                    <Button variant='outline' size='sm' disabled={selectedCount === 0}>
-                        <HugeiconsIcon icon={Download04Icon} strokeWidth={1.8} />
-                        Download
+                    <Button
+                        variant='outline'
+                        size='sm'
+                        disabled={selectedCount === 0 || isDownloading || !onDownload}
+                        onClick={() => void downloadFiles(selectedFiles)}
+                    >
+                        {isDownloading ? (
+                            <Spinner data-icon='inline-start' />
+                        ) : (
+                            <HugeiconsIcon
+                                icon={Download04Icon}
+                                data-icon='inline-start'
+                                strokeWidth={1.8}
+                            />
+                        )}
+                        {isDownloading ? 'Preparing…' : 'Download'}
                     </Button>
                     <Button
                         variant='destructive'
@@ -104,6 +179,11 @@ export function FileList({ files, onDelete, onRename }: FileListProps) {
                     </Button>
                 </div>
             </div>
+            {downloadStatus && (
+                <p className='text-muted-foreground text-xs' aria-live='polite'>
+                    {downloadStatus}
+                </p>
+            )}
 
             {files.length === 0 ? (
                 <Empty className='min-h-60 rounded-lg border border-solid'>
@@ -173,7 +253,9 @@ export function FileList({ files, onDelete, onRename }: FileListProps) {
                                         ))}
                                     </ContextMenuTrigger>
                                     <FileActionsContextMenu
+                                        isDownloading={isDownloading}
                                         onDelete={() => setFilesToDelete([row.original])}
+                                        onDownload={() => void downloadFiles([row.original])}
                                         onRename={() => setFileToRename(row.original)}
                                     />
                                 </ContextMenu>
@@ -183,6 +265,12 @@ export function FileList({ files, onDelete, onRename }: FileListProps) {
                 </div>
             )}
 
+            <DownloadFilesDialog
+                downloads={preparedDownloads}
+                onOpenChange={(open) => {
+                    if (!open) setPreparedDownloads([]);
+                }}
+            />
             <DeleteFilesDialog
                 fileNames={filesToDelete.map((file) => file.name)}
                 onOpenChange={(open) => {
