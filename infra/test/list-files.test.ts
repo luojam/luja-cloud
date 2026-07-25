@@ -104,9 +104,13 @@ test('queries only the owner ID from the verified JWT subject', async () => {
     );
 });
 
-test('returns ready records using only the public response fields and excludes pending records', async () => {
+test('returns ready records using only public fields and excludes pending and cleanup states', async () => {
     const query = queryMock().mockResolvedValue({
-        Items: [readyFile(), readyFile({ fileId: 'pending', status: 'pending' })],
+        Items: [
+            readyFile(),
+            readyFile({ fileId: 'pending', status: 'pending' }),
+            readyFile({ fileId: 'cleanup', status: 'cleanup' }),
+        ],
     });
 
     const result = await invoke(query);

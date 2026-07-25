@@ -105,6 +105,13 @@ test('returns ready records idempotently without checking S3 or updating', async
     expect(deps.updateFile).not.toHaveBeenCalled();
 });
 
+test('does not complete an internally claimed cleanup record', async () => {
+    const deps = dependencies(file({ status: 'cleanup' }));
+    expect((await invoke(deps)).statusCode).toBe(409);
+    expect(deps.headFile).not.toHaveBeenCalled();
+    expect(deps.updateFile).not.toHaveBeenCalled();
+});
+
 test('leaves a pending record unchanged when the S3 object is missing', async () => {
     const deps = dependencies();
     deps.headFile.mockRejectedValue({ name: 'NotFound', $metadata: { httpStatusCode: 404 } });

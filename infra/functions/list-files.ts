@@ -14,7 +14,7 @@ export interface FileMetadataItem {
     mimeType: string;
     sizeBytes: number;
     objectKey: string;
-    status: 'pending' | 'ready';
+    status: 'pending' | 'ready' | 'cleanup';
     createdAt: string;
     modifiedAt: string;
 }

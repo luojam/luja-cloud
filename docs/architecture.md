@@ -41,14 +41,14 @@ flowchart LR
 
 ### AWS components
 
-| Component | Responsibility |
-| --- | --- |
-| S3 and CloudFront | Host and deliver the built React application. |
-| Clerk | User authentication; the backend validates Clerk session tokens. |
-| API Gateway HTTP API | Exposes the small backend API. |
-| Lambda | Authorizes requests, manages metadata, and creates short-lived S3 URLs. |
-| S3 | Stores private file contents. Public access remains blocked. |
-| DynamoDB | Stores filenames, ownership, timestamps, upload state, and sharing records. |
+| Component            | Responsibility                                                              |
+| -------------------- | --------------------------------------------------------------------------- |
+| S3 and CloudFront    | Host and deliver the built React application.                               |
+| Clerk                | User authentication; the backend validates Clerk session tokens.            |
+| API Gateway HTTP API | Exposes the small backend API.                                              |
+| Lambda               | Authorizes requests, manages metadata, and creates short-lived S3 URLs.     |
+| S3                   | Stores private file contents. Public access remains blocked.                |
+| DynamoDB             | Stores filenames, ownership, timestamps, upload state, and sharing records. |
 
 The CDK application in `infra/` will define and deploy both the frontend hosting and backend resources. The frontend assets and user files use separate S3 buckets with separate access policies.
 
@@ -71,7 +71,7 @@ name
 mimeType
 sizeBytes
 objectKey
-status              pending | ready
+status              pending | ready | cleanup (internal only)
 createdAt
 modifiedAt
 ```
@@ -118,6 +118,8 @@ sequenceDiagram
 ```
 
 Uploads use one signed PUT request per file. Multipart uploads are intentionally out of scope.
+
+A daily cleanup job treats `pending` records at least 24 hours old as abandoned. It first conditionally moves each candidate to the internal `cleanup` state, then deletes its S3 object and metadata. Completion can only move `pending` to `ready`, so whichever operation claims the record first wins without cleanup deleting a concurrently completed file. `cleanup` records are retried after partial failures and are never exposed through the public API.
 
 ## Download flow
 

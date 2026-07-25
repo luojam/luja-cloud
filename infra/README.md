@@ -16,7 +16,36 @@ The current authenticated routes are:
 - `GET /api/files/{id}/download` returns only a five-minute presigned S3 GET URL for the signed-in owner's ready record. Missing, pending, and non-owned files all return the same `404`. The signed response forces the metadata MIME type and a safely encoded attachment filename.
 - `DELETE /api/files/{id}` permanently deletes the signed-in owner's ready file. It removes the exact stored S3 object before conditionally deleting metadata; missing, pending, and non-owned files all return the same `404`.
 
-The file metadata table uses `ownerId` (partition key) and `fileId` (sort key), on-demand billing, and no secondary indexes. Items also contain `objectKey` and a `pending` or `ready` status, but private storage fields are not returned by the list API. Each Lambda has only the table and bucket operations required for its part of the flow.
+The file metadata table uses `ownerId` (partition key) and `fileId` (sort key), on-demand billing, and no secondary indexes. Items also contain `objectKey` and a `pending`, `ready`, or internal `cleanup` status, but private storage fields and internal states are not returned by the list API. Each Lambda has only the table and bucket operations required for its part of the flow.
+
+## Abandoned upload cleanup
+
+A dedicated Lambda runs from an EventBridge rule once per day. The abandonment window is exactly 24 hours, defined by `ABANDONED_UPLOAD_AGE_MS` in `functions/cleanup-abandoned-uploads.ts`. Because this small personal-vault table has no status index, each run performs a paginated table scan for stale `pending` items and retryable `cleanup` items.
+
+Cleanup conditionally claims stale metadata by changing `pending` to the internal `cleanup` state while its status, creation timestamp, and object key still match. It then idempotently deletes the object and conditionally deletes metadata that remains claimed. A missing object is successful. An object-delete failure leaves the only object reference in `cleanup` for the next run. Upload completion only transitions `pending` to `ready`, so completion and cleanup cannot both win.
+
+The function has a five-minute timeout and reserved concurrency of one to prevent overlapping scheduled or manual runs. EventBridge retries failed invocations twice within two hours; per-object failures remain claimed and are retried by the next daily scan. Its dedicated log group is destructively removed with the stack and retained for one week. Logs contain aggregate `scanned`, `candidates`, `claimed`, `deleted`, `conflicts`, and `failures` counts plus generic operation names—never owners, records, filenames, object keys, presigned data, or raw AWS errors.
+
+Monitor the cleanup Lambda's CloudWatch `Errors`, `Throttles`, and duration metrics and its aggregate completion log. Investigate nonzero `failures`, recurring `conflicts`, missing daily invocations, or duration approaching five minutes. Reserved concurrency can produce a throttle when an operator invokes cleanup during an existing run; wait for that run rather than increasing concurrency.
+
+### Manual cleanup verification and invocation
+
+After deployment, the stack output `CleanupUploadsFunctionName` identifies the function. Prefer the Lambda console's **Test** action with `{}`. To invoke it with the CLI without recording any private item data, use:
+
+```sh
+FUNCTION_NAME=$(aws cloudformation describe-stacks \
+  --stack-name LujaCloudStack \
+  --query "Stacks[0].Outputs[?OutputKey=='CleanupUploadsFunctionName'].OutputValue" \
+  --output text)
+aws lambda invoke --function-name "$FUNCTION_NAME" --payload '{}' /tmp/luja-cleanup-result.json
+```
+
+Verify behavior with the DynamoDB and S3 consoles:
+
+1. Create a complete test metadata item in `pending` state with `createdAt` older than 24 hours and an `objectKey` under `files/`; upload an object at that exact key. Also create a fresh `pending` test item/object and retain an existing `ready` test item/object. Do not put owner IDs, names, or keys in shell commands or logs.
+2. Invoke cleanup and confirm the stale item and object are absent while the fresh pending and ready pairs remain.
+3. To verify retry safety, temporarily make object deletion fail in a disposable environment, invoke cleanup, and confirm metadata remains with status `cleanup` and its object reference intact. Restore permission and invoke again; both should be removed. Never manually delete the claimed metadata while its object remains.
+4. Review only the aggregate completion counts and Lambda metrics. Remove all surviving test records and objects in the consoles.
 
 The user-file bucket blocks public access, uses S3-managed encryption, and has no website hosting. Upload CORS permits PUT with the `content-type` header from the Vite development/preview origins and the generated CloudFront application origin. A post-deployment custom resource applies the generated CloudFront origin without introducing a resource dependency cycle.
 
@@ -114,6 +143,7 @@ The command compiles the infrastructure, creates a Vite production build using `
 ```text
 LujaCloudStack.ApplicationUrl = https://<distribution-domain>.cloudfront.net
 LujaCloudStack.SessionApiUrl = https://<api-id>.execute-api.<region>.amazonaws.com/api/session
+LujaCloudStack.CleanupUploadsFunctionName = <cleanup-function-name>
 ```
 
 Use `ApplicationUrl` for the application and for all browser/API smoke tests. Deployment uses generated physical resource names and a single environment-specific, stage-less `LujaCloudStack` in the account and region selected by the AWS profile.
@@ -134,7 +164,7 @@ Use the CloudFront `ApplicationUrl` throughout. Use a new test user with no meta
 3. Complete a real Clerk sign-in and confirm navigation reaches `/dashboard`. In browser developer tools, confirm the authenticated `/api/files` request returns `200` with `{ "files": [] }`; do not copy its authorization header.
 4. Confirm the dashboard renders the real empty state. Upload a small file and an empty file together. In browser network tools, confirm each file's bytes go in a PUT request to S3, no Clerk `Authorization` header is sent to S3, and each completed file appears without refreshing. Reload `/dashboard` and confirm both remain listed.
 5. Select a file larger than 100 MiB and confirm the dialog rejects it before an upload-initiation API request occurs.
-6. Simulate a failed S3 PUT (for example, use browser request blocking for the S3 hostname). Confirm the failed file remains available for retry/removal and never appears in the list. A pending metadata record may remain until abandoned-upload cleanup is implemented.
+6. Simulate a failed S3 PUT (for example, use browser request blocking for the S3 hostname). Confirm the failed file remains available for retry/removal and never appears in the list. Its pending metadata remains until it is 24 hours old and the abandoned-upload cleanup runs.
 7. In the DynamoDB console, add one `pending` item for that owner and one `ready` item for a different owner. Refresh or refetch and confirm neither appears. Confirm `/api/files` responses do not expose `ownerId`, `objectKey`, or `status`.
 8. Rename an uploaded file from its row menu. Confirm the dialog preserves the displayed extension, stays open with the draft intact if the PATCH is blocked or fails, and closes after a successful request. Confirm the renamed row moves appropriately when sorted by name or modification time.
 9. Download the renamed file and confirm its original bytes and new visible filename. In DynamoDB, confirm its `fileId`, `objectKey`, MIME type, size, status, and creation timestamp did not change. Select multiple files, use the toolbar Download button, and confirm the dialog provides one working link per successfully prepared file. In browser network tools, confirm the API request has the Clerk token but the S3 GET does not.
@@ -180,3 +210,9 @@ AWS_PROFILE=<profile> npm run destroy
 ```
 
 The script compiles both projects so synthesis works in a clean checkout, then runs the repository-local `cdk destroy --force`. For the current development stage, all stack-owned resources use destructive removal policies: buckets are emptied automatically, and the file metadata table and all catalog records are permanently deleted. Wait for CloudFormation and CloudFront deletion to finish, and verify stack deletion and resource cleanup in the selected account and region.
+
+## Potential hardening and fixes
+
+### Reconcile late PUT objects
+
+A single PUT started before its presigned URL expires can finish after abandoned-upload cleanup has removed its object and metadata, leaving an unreferenced S3 object. This low-probability case is currently accepted given the 100 MiB limit and 24-hour cleanup threshold. If stronger guarantees are needed, investigate an age-guarded S3-to-DynamoDB orphan sweep or a lifecycle-managed staging prefix.

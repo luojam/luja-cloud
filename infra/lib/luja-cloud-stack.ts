@@ -8,6 +8,8 @@ import * as cdk from 'aws-cdk-lib/core';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as eventsTargets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -219,6 +221,47 @@ export class LujaCloudStack extends cdk.Stack {
                 conditions: { StringLike: { 's3:prefix': ['files/*'] } },
             })
         );
+
+        const cleanupLogGroup = new logs.LogGroup(this, 'CleanupUploadsFunctionLogs', {
+            retention: logs.RetentionDays.ONE_WEEK,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+        const cleanupFunction = new lambdaNodejs.NodejsFunction(this, 'CleanupUploadsFunction', {
+            entry: path.join(__dirname, '..', 'functions', 'cleanup-abandoned-uploads.ts'),
+            handler: 'handler',
+            runtime: lambda.Runtime.NODEJS_22_X,
+            timeout: cdk.Duration.minutes(5),
+            reservedConcurrentExecutions: 1,
+            logGroup: cleanupLogGroup,
+            environment: {
+                FILES_TABLE_NAME: filesTable.tableName,
+                FILES_BUCKET_NAME: userFilesBucket.bucketName,
+            },
+        });
+        cleanupFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['dynamodb:Scan', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem'],
+                resources: [filesTable.tableArn],
+            })
+        );
+        cleanupFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['s3:DeleteObject'],
+                resources: [userFilesBucket.arnForObjects('files/*')],
+            })
+        );
+        const cleanupSchedule = new events.Rule(this, 'CleanupUploadsSchedule', {
+            schedule: events.Schedule.rate(cdk.Duration.days(1)),
+        });
+        cleanupSchedule.addTarget(
+            new eventsTargets.LambdaFunction(cleanupFunction, {
+                retryAttempts: 2,
+                maxEventAge: cdk.Duration.hours(2),
+            })
+        );
+        new cdk.CfnOutput(this, 'CleanupUploadsFunctionName', {
+            value: cleanupFunction.functionName,
+        });
 
         const api = new apigatewayv2.HttpApi(this, 'SessionApi');
         const authorizer = new HttpJwtAuthorizer('ClerkJwtAuthorizer', props.clerkIssuer, {

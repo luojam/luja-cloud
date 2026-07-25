@@ -357,3 +357,61 @@ test('configures delete with destructible logs and least-privilege metadata and 
         ])
     );
 });
+
+test('schedules cleanup daily with bounded retries and invocation permission', () => {
+    const template = stackTemplate();
+
+    template.hasResourceProperties('AWS::Events::Rule', {
+        ScheduleExpression: 'rate(1 day)',
+        State: 'ENABLED',
+        Targets: Match.arrayWith([
+            Match.objectLike({
+                RetryPolicy: {
+                    MaximumEventAgeInSeconds: 7200,
+                    MaximumRetryAttempts: 2,
+                },
+            }),
+        ]),
+    });
+    template.hasResourceProperties('AWS::Lambda::Permission', {
+        Action: 'lambda:InvokeFunction',
+        Principal: 'events.amazonaws.com',
+        SourceArn: Match.anyValue(),
+    });
+});
+
+test('configures cleanup timeout, single concurrency, destructible logs, and least privilege', () => {
+    const template = stackTemplate();
+    const functions = template.findResources('AWS::Lambda::Function');
+    const cleanupFunction = Object.entries(functions).find(([logicalId]) =>
+        logicalId.includes('CleanupUploadsFunction')
+    )?.[1];
+    expect(cleanupFunction).toBeDefined();
+    expect(cleanupFunction?.Properties).toEqual(
+        expect.objectContaining({ Timeout: 300, ReservedConcurrentExecutions: 1 })
+    );
+
+    const logGroupReference = cleanupFunction?.Properties.LoggingConfig.LogGroup.Ref;
+    const logGroup = template.findResources('AWS::Logs::LogGroup')[logGroupReference];
+    expect(logGroup).toEqual(
+        expect.objectContaining({
+            DeletionPolicy: 'Delete',
+            UpdateReplacePolicy: 'Delete',
+            Properties: { RetentionInDays: 7 },
+        })
+    );
+
+    const policies = Object.entries(template.findResources('AWS::IAM::Policy'))
+        .filter(([logicalId]) => logicalId.includes('CleanupUploadsFunction'))
+        .flatMap(([, policy]) => policy.Properties.PolicyDocument.Statement);
+    const actions = policies.flatMap((statement: { Action: string | string[] }) =>
+        Array.isArray(statement.Action) ? statement.Action : [statement.Action]
+    );
+    expect(actions.sort()).toEqual(
+        ['dynamodb:Scan', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 's3:DeleteObject'].sort()
+    );
+    const objectDelete = policies.find(
+        (statement: { Action: string | string[] }) => statement.Action === 's3:DeleteObject'
+    );
+    expect(JSON.stringify(objectDelete?.Resource)).toContain('/files/*');
+});
