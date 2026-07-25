@@ -1,13 +1,17 @@
-import { SignIn } from '@clerk/react';
+import { SignIn, SignUp } from '@clerk/react';
 import { AuthBackground } from '@/components/auth/auth-background';
 import { Skeleton } from '@/components/ui/skeleton';
 
-function ClerkPanelSkeleton() {
+type AuthMode = 'sign-in' | 'sign-up';
+
+function ClerkPanelSkeleton({ mode }: { mode: AuthMode }) {
+    const formName = mode === 'sign-in' ? 'sign-in' : 'sign-up';
+
     return (
         <div
             className='bg-card flex w-full flex-col gap-6 rounded-xl border p-8'
             role='status'
-            aria-label='Loading sign-in form'
+            aria-label={`Loading ${formName} form`}
         >
             {/* Follow Clerk's compact form rhythm without guessing a fixed panel height. */}
             <div className='flex flex-col items-center gap-3'>
@@ -33,26 +37,38 @@ function ClerkPanelSkeleton() {
     );
 }
 
-function ClerkPanel() {
+const clerkAppearance = {
+    variables: {
+        colorPrimary: 'var(--primary)',
+    },
+};
+
+function ClerkPanel({ mode }: { mode: AuthMode }) {
     return (
         <div className='w-full max-w-[25rem]'>
-            <SignIn
-                withSignUp
-                routing='hash'
-                forceRedirectUrl='/dashboard'
-                signUpForceRedirectUrl='/dashboard'
-                fallback={<ClerkPanelSkeleton />}
-                appearance={{
-                    variables: {
-                        colorPrimary: 'var(--primary)',
-                    },
-                }}
-            />
+            {mode === 'sign-in' ? (
+                <SignIn
+                    withSignUp={false}
+                    signUpUrl='/sign-up'
+                    routing='hash'
+                    forceRedirectUrl='/dashboard'
+                    fallback={<ClerkPanelSkeleton mode={mode} />}
+                    appearance={clerkAppearance}
+                />
+            ) : (
+                <SignUp
+                    signInUrl='/sign-in'
+                    routing='hash'
+                    forceRedirectUrl='/dashboard'
+                    fallback={<ClerkPanelSkeleton mode={mode} />}
+                    appearance={clerkAppearance}
+                />
+            )}
         </div>
     );
 }
 
-export function AuthLanding() {
+export function AuthLanding({ mode }: { mode: AuthMode }) {
     return (
         <AuthBackground>
             <section className='relative z-1 mx-auto grid min-h-[calc(100svh-4.5rem)] w-[calc(100%-2.5rem)] max-w-6xl grid-cols-[minmax(0,1fr)_minmax(21rem,28rem)] items-center gap-[clamp(3rem,9vw,10rem)] pt-16 pb-24 max-[800px]:grid-cols-1 max-[800px]:pt-12'>
@@ -64,7 +80,7 @@ export function AuthLanding() {
                         plain useful
                     </p>
                 </div>
-                <ClerkPanel />
+                <ClerkPanel mode={mode} />
             </section>
         </AuthBackground>
     );
