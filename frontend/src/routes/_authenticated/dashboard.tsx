@@ -21,6 +21,7 @@ import {
     initiateUpload,
     listFiles,
     putUpload,
+    renameFile,
 } from '@/lib/files-api';
 import type { FileRecord } from '@/lib/files';
 import { UploadProvider, type UploadBatchResult } from '@/providers/upload-provider';
@@ -64,6 +65,17 @@ function DashboardPage() {
         }
 
         return { downloads, failed: files.length - downloads.length };
+    }
+
+    async function renameSelectedFile(file: FileRecord, name: string): Promise<void> {
+        const controller = new AbortController();
+        const renamedFile = await renameFile(getToken, file.fileId, name, controller.signal);
+        await queryClient.cancelQueries({ queryKey: filesQueryKey });
+        queryClient.setQueryData<FileRecord[]>(filesQueryKey, (currentFiles) =>
+            currentFiles?.map((currentFile) =>
+                currentFile.fileId === renamedFile.fileId ? renamedFile : currentFile
+            )
+        );
     }
 
     async function uploadFiles(files: File[]): Promise<UploadBatchResult> {
@@ -124,7 +136,11 @@ function DashboardPage() {
                         </EmptyContent>
                     </Empty>
                 ) : (
-                    <FileList files={filesQuery.data} onDownload={downloadFiles} />
+                    <FileList
+                        files={filesQuery.data}
+                        onDownload={downloadFiles}
+                        onRename={renameSelectedFile}
+                    />
                 )}
             </DashboardShell>
         </UploadProvider>

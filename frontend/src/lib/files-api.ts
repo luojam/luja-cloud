@@ -52,6 +52,7 @@ function isFileRecord(value: unknown): value is FileRecord {
         hasOnlyKeys(record, fileRecordKeys) &&
         isNonEmptyString(record.fileId) &&
         isNonEmptyString(record.name) &&
+        record.name.length <= 255 &&
         isNonEmptyString(record.mimeType) &&
         typeof record.sizeBytes === 'number' &&
         Number.isSafeInteger(record.sizeBytes) &&
@@ -71,6 +72,17 @@ function parseFilesPayload(value: unknown): FileRecord[] {
     if (!payload.files.every(isFileRecord)) throw new FilesApiError('generic');
 
     return payload.files;
+}
+
+function parseFilePayload(value: unknown, failureMessage: string): FileRecord {
+    if (typeof value !== 'object' || value === null) {
+        throw new FilesApiError('generic', failureMessage);
+    }
+    const payload = value as Record<string, unknown>;
+    if (!hasOnlyKeys(payload, ['file']) || !isFileRecord(payload.file)) {
+        throw new FilesApiError('generic', failureMessage);
+    }
+    return payload.file;
 }
 
 function parseDownloadUrl(value: unknown, fileName: string): string {
@@ -241,13 +253,31 @@ export async function completeUpload(
         signal,
         'The uploaded file could not be verified.'
     );
-    const value = await responseJson(response, 'The uploaded file could not be verified.');
-    if (typeof value !== 'object' || value === null) {
-        throw new FilesApiError('generic', 'The uploaded file could not be verified.');
+    const failureMessage = 'The uploaded file could not be verified.';
+    return parseFilePayload(await responseJson(response, failureMessage), failureMessage);
+}
+
+export async function renameFile(
+    getToken: GetToken,
+    fileId: string,
+    name: string,
+    signal: AbortSignal
+): Promise<FileRecord> {
+    const failureMessage = 'Unable to rename this file. Please try again.';
+    const response = await authenticatedRequest(
+        getToken,
+        `/api/files/${encodeURIComponent(fileId)}`,
+        {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name }),
+        },
+        signal,
+        failureMessage
+    );
+    const file = parseFilePayload(await responseJson(response, failureMessage), failureMessage);
+    if (file.fileId !== fileId || file.name !== name.trim()) {
+        throw new FilesApiError('generic', failureMessage);
     }
-    const payload = value as Record<string, unknown>;
-    if (!hasOnlyKeys(payload, ['file']) || !isFileRecord(payload.file)) {
-        throw new FilesApiError('generic', 'The uploaded file could not be verified.');
-    }
-    return payload.file;
+    return file;
 }

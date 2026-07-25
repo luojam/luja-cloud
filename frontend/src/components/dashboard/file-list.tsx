@@ -42,7 +42,7 @@ type FileListProps = {
     files: FileRecord[];
     onDelete?: (files: FileRecord[]) => void;
     onDownload?: (files: FileRecord[]) => Promise<DownloadBatchResult>;
-    onRename?: (file: FileRecord, fileName: string) => void;
+    onRename?: (file: FileRecord, fileName: string) => Promise<void>;
 };
 
 function getAriaSort(direction: false | 'asc' | 'desc') {
@@ -132,9 +132,9 @@ export function FileList({ files, onDelete, onDownload, onRename }: FileListProp
         table.resetRowSelection();
     }
 
-    function confirmRename(fileName: string) {
-        if (!fileToRename) return;
-        onRename?.(fileToRename, fileName);
+    async function confirmRename(fileName: string) {
+        if (!fileToRename || !onRename) return;
+        await onRename(fileToRename, fileName);
         setFileToRename(null);
     }
 

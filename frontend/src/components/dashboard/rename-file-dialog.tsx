@@ -10,34 +10,55 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
 import {
     InputGroup,
     InputGroupAddon,
     InputGroupInput,
     InputGroupText,
 } from '@/components/ui/input-group';
+import { Spinner } from '@/components/ui/spinner';
 import { splitFileName } from '@/lib/files';
 
 type RenameFileDialogProps = {
     fileName: string;
     onOpenChange: (open: boolean) => void;
-    onConfirm: (fileName: string) => void;
+    onConfirm: (fileName: string) => Promise<void>;
 };
 
 export function RenameFileDialog({ fileName, onOpenChange, onConfirm }: RenameFileDialogProps) {
     const { stem, extension } = splitFileName(fileName);
     const [newFileStem, setNewFileStem] = useState(stem);
+    const [isPending, setIsPending] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
     const trimmedFileStem = newFileStem.trim();
 
-    function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
+    async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
         event.preventDefault();
-        if (!trimmedFileStem) return;
-        onConfirm(`${trimmedFileStem}${extension}`);
+        if (!trimmedFileStem || isPending) return;
+
+        setIsPending(true);
+        setErrorMessage('');
+        try {
+            await onConfirm(`${trimmedFileStem}${extension}`);
+        } catch (error) {
+            setErrorMessage(
+                error instanceof Error
+                    ? error.message
+                    : 'Unable to rename this file. Please try again.'
+            );
+        } finally {
+            setIsPending(false);
+        }
     }
 
     return (
-        <Dialog open onOpenChange={onOpenChange}>
+        <Dialog
+            open
+            onOpenChange={(open) => {
+                if (!isPending) onOpenChange(open);
+            }}
+        >
             <DialogContent showCloseButton={false}>
                 <form className='flex flex-col gap-6' onSubmit={handleSubmit}>
                     <DialogHeader>
@@ -45,14 +66,19 @@ export function RenameFileDialog({ fileName, onOpenChange, onConfirm }: RenameFi
                         <DialogDescription>Enter a new name for “{fileName}”.</DialogDescription>
                     </DialogHeader>
                     <FieldGroup>
-                        <Field>
+                        <Field data-invalid={Boolean(errorMessage)} data-disabled={isPending}>
                             <FieldLabel htmlFor='file-name'>File name</FieldLabel>
                             <InputGroup>
                                 <InputGroupInput
                                     id='file-name'
                                     autoFocus
                                     value={newFileStem}
-                                    onChange={(event) => setNewFileStem(event.target.value)}
+                                    disabled={isPending}
+                                    aria-invalid={Boolean(errorMessage)}
+                                    onChange={(event) => {
+                                        setNewFileStem(event.target.value);
+                                        setErrorMessage('');
+                                    }}
                                     onFocus={(event) => event.currentTarget.select()}
                                 />
                                 {extension && (
@@ -66,14 +92,18 @@ export function RenameFileDialog({ fileName, onOpenChange, onConfirm }: RenameFi
                                     The {extension} extension will be preserved.
                                 </FieldDescription>
                             )}
+                            <FieldError>{errorMessage}</FieldError>
                         </Field>
                     </FieldGroup>
                     <DialogFooter>
-                        <DialogClose render={<Button type='button' variant='outline' />}>
+                        <DialogClose
+                            render={<Button type='button' variant='outline' disabled={isPending} />}
+                        >
                             Cancel
                         </DialogClose>
-                        <Button type='submit' disabled={!trimmedFileStem}>
-                            Rename
+                        <Button type='submit' disabled={!trimmedFileStem || isPending}>
+                            {isPending && <Spinner data-icon='inline-start' />}
+                            {isPending ? 'Renaming…' : 'Rename'}
                         </Button>
                     </DialogFooter>
                 </form>

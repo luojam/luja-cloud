@@ -133,6 +133,26 @@ export class LujaCloudStack extends cdk.Stack {
             })
         );
 
+        const renameFileLogGroup = new logs.LogGroup(this, 'RenameFileFunctionLogs', {
+            retention: logs.RetentionDays.ONE_WEEK,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+        const renameFileFunction = new lambdaNodejs.NodejsFunction(this, 'RenameFileFunction', {
+            entry: path.join(__dirname, '..', 'functions', 'rename-file.ts'),
+            handler: 'handler',
+            runtime: lambda.Runtime.NODEJS_22_X,
+            logGroup: renameFileLogGroup,
+            environment: {
+                FILES_TABLE_NAME: filesTable.tableName,
+            },
+        });
+        renameFileFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
+                resources: [filesTable.tableArn],
+            })
+        );
+
         const completeUploadLogGroup = new logs.LogGroup(this, 'CompleteUploadFunctionLogs', {
             retention: logs.RetentionDays.ONE_WEEK,
             removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -207,6 +227,13 @@ export class LujaCloudStack extends cdk.Stack {
             path: '/api/files/{id}/download',
             methods: [apigatewayv2.HttpMethod.GET],
             integration: new HttpLambdaIntegration('DownloadFileIntegration', downloadFileFunction),
+            authorizer,
+        });
+
+        api.addRoutes({
+            path: '/api/files/{id}',
+            methods: [apigatewayv2.HttpMethod.PATCH],
+            integration: new HttpLambdaIntegration('RenameFileIntegration', renameFileFunction),
             authorizer,
         });
 

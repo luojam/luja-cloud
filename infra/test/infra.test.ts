@@ -157,6 +157,63 @@ test('grants upload handlers only their required file table and bucket actions',
     );
 });
 
+test('registers authenticated rename PATCH route and forwards it through CloudFront', () => {
+    const template = stackTemplate();
+
+    template.hasResourceProperties('AWS::ApiGatewayV2::Route', {
+        RouteKey: 'PATCH /api/files/{id}',
+        AuthorizationType: 'JWT',
+        AuthorizerId: Match.anyValue(),
+    });
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+        DistributionConfig: {
+            CacheBehaviors: Match.arrayWith([
+                Match.objectLike({
+                    PathPattern: '/api/*',
+                    AllowedMethods: ['GET', 'HEAD', 'OPTIONS', 'PUT', 'PATCH', 'POST', 'DELETE'],
+                }),
+            ]),
+        },
+    });
+});
+
+test('configures rename with one-week destructible logs and metadata-only permissions', () => {
+    const template = stackTemplate();
+    const functions = template.findResources('AWS::Lambda::Function');
+    const renameFunction = Object.entries(functions).find(([logicalId]) =>
+        logicalId.includes('RenameFileFunction')
+    )?.[1];
+    expect(renameFunction).toBeDefined();
+
+    const logGroupReference = renameFunction?.Properties.LoggingConfig.LogGroup.Ref;
+    const logGroup = template.findResources('AWS::Logs::LogGroup')[logGroupReference];
+    expect(logGroup).toEqual(
+        expect.objectContaining({
+            DeletionPolicy: 'Delete',
+            UpdateReplacePolicy: 'Delete',
+            Properties: { RetentionInDays: 7 },
+        })
+    );
+
+    const renamePolicies = Object.entries(template.findResources('AWS::IAM::Policy'))
+        .filter(([logicalId]) => logicalId.includes('RenameFileFunction'))
+        .flatMap(([, policy]) => policy.Properties.PolicyDocument.Statement);
+    const actions = renamePolicies.flatMap((statement: { Action: string | string[] }) =>
+        Array.isArray(statement.Action) ? statement.Action : [statement.Action]
+    );
+    expect(actions).toEqual(expect.arrayContaining(['dynamodb:GetItem', 'dynamodb:UpdateItem']));
+    expect(actions.some((action: string) => action.startsWith('s3:'))).toBe(false);
+    expect(actions).not.toEqual(
+        expect.arrayContaining([
+            'dynamodb:PutItem',
+            'dynamodb:DeleteItem',
+            'dynamodb:BatchWriteItem',
+            'dynamodb:CreateTable',
+            'dynamodb:DeleteTable',
+        ])
+    );
+});
+
 test('registers authenticated download GET route', () => {
     const template = stackTemplate();
 
