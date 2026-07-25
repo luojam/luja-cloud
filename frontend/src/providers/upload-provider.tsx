@@ -24,10 +24,7 @@ export function UploadProvider({ children, onUpload }: UploadProviderProps) {
 
     const openUploadDialog = useCallback(() => setOpen(true), []);
     const selectFiles = useCallback(() => inputRef.current?.click(), []);
-    const contextValue = useMemo(
-        () => ({ openUploadDialog, selectFiles }),
-        [openUploadDialog, selectFiles]
-    );
+    const contextValue = useMemo(() => ({ openUploadDialog }), [openUploadDialog]);
 
     function addFiles(selectedFiles: File[]) {
         if (!selectedFiles.length) return;

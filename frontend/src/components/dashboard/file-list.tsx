@@ -58,7 +58,7 @@ function getAriaSort(direction: false | 'asc' | 'desc') {
 }
 
 export function FileList({ files, onDelete, onDownload, onRename }: FileListProps) {
-    const { selectFiles } = useUpload();
+    const { openUploadDialog } = useUpload();
     const [sorting, setSorting] = useState<SortingState>([{ id: 'modifiedAt', desc: true }]);
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
     const [filesToDelete, setFilesToDelete] = useState<FileRecord[]>([]);
@@ -232,7 +232,7 @@ export function FileList({ files, onDelete, onDownload, onRename }: FileListProp
                         <EmptyTitle>No files yet</EmptyTitle>
                     </EmptyHeader>
                     <EmptyContent>
-                        <Button type='button' onClick={selectFiles}>
+                        <Button type='button' onClick={openUploadDialog}>
                             Upload
                         </Button>
                     </EmptyContent>

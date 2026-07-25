@@ -2,7 +2,6 @@ import { createContext, useContext } from 'react';
 
 export type UploadContextValue = {
     openUploadDialog: () => void;
-    selectFiles: () => void;
 };
 
 export const UploadContext = createContext<UploadContextValue | null>(null);
