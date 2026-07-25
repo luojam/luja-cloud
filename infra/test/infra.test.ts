@@ -293,3 +293,67 @@ test('registers GET /api/files with the Clerk JWT authorizer', () => {
         AuthorizerId: Match.anyValue(),
     });
 });
+
+test('registers authenticated file DELETE route and forwards it through CloudFront', () => {
+    const template = stackTemplate();
+
+    template.hasResourceProperties('AWS::ApiGatewayV2::Route', {
+        RouteKey: 'DELETE /api/files/{id}',
+        AuthorizationType: 'JWT',
+        AuthorizerId: Match.anyValue(),
+    });
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+        DistributionConfig: {
+            CacheBehaviors: Match.arrayWith([
+                Match.objectLike({
+                    PathPattern: '/api/*',
+                    AllowedMethods: ['GET', 'HEAD', 'OPTIONS', 'PUT', 'PATCH', 'POST', 'DELETE'],
+                }),
+            ]),
+        },
+    });
+});
+
+test('configures delete with destructible logs and least-privilege metadata and object access', () => {
+    const template = stackTemplate();
+    const functions = template.findResources('AWS::Lambda::Function');
+    const deleteFunction = Object.entries(functions).find(([logicalId]) =>
+        logicalId.includes('DeleteFileFunction')
+    )?.[1];
+    expect(deleteFunction).toBeDefined();
+
+    const logGroupReference = deleteFunction?.Properties.LoggingConfig.LogGroup.Ref;
+    const logGroup = template.findResources('AWS::Logs::LogGroup')[logGroupReference];
+    expect(logGroup).toEqual(
+        expect.objectContaining({
+            DeletionPolicy: 'Delete',
+            UpdateReplacePolicy: 'Delete',
+            Properties: { RetentionInDays: 7 },
+        })
+    );
+
+    const policies = Object.entries(template.findResources('AWS::IAM::Policy'))
+        .filter(([logicalId]) => logicalId.includes('DeleteFileFunction'))
+        .flatMap(([, policy]) => policy.Properties.PolicyDocument.Statement);
+    const actions = policies.flatMap((statement: { Action: string | string[] }) =>
+        Array.isArray(statement.Action) ? statement.Action : [statement.Action]
+    );
+    expect(actions.sort()).toEqual(
+        ['dynamodb:DeleteItem', 'dynamodb:GetItem', 's3:DeleteObject'].sort()
+    );
+    const deleteObject = policies.find(
+        (statement: { Action: string | string[] }) => statement.Action === 's3:DeleteObject'
+    );
+    expect(JSON.stringify(deleteObject?.Resource)).toContain('/files/*');
+    expect(actions).not.toEqual(
+        expect.arrayContaining([
+            'dynamodb:Query',
+            'dynamodb:Scan',
+            'dynamodb:PutItem',
+            'dynamodb:UpdateItem',
+            's3:GetObject',
+            's3:PutObject',
+            's3:ListBucket',
+        ])
+    );
+});

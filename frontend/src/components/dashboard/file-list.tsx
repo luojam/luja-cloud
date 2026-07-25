@@ -38,9 +38,15 @@ export type DownloadBatchResult = {
     failed: number;
 };
 
+export type DeleteBatchResult = {
+    deletedFileIds: string[];
+    failedFileIds: string[];
+    error?: string;
+};
+
 type FileListProps = {
     files: FileRecord[];
-    onDelete?: (files: FileRecord[]) => void;
+    onDelete?: (files: FileRecord[]) => Promise<DeleteBatchResult>;
     onDownload?: (files: FileRecord[]) => Promise<DownloadBatchResult>;
     onRename?: (file: FileRecord, fileName: string) => Promise<void>;
 };
@@ -56,10 +62,13 @@ export function FileList({ files, onDelete, onDownload, onRename }: FileListProp
     const [sorting, setSorting] = useState<SortingState>([{ id: 'modifiedAt', desc: true }]);
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
     const [filesToDelete, setFilesToDelete] = useState<FileRecord[]>([]);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState('');
     const [fileToRename, setFileToRename] = useState<FileRecord | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [downloadStatus, setDownloadStatus] = useState('');
     const [preparedDownloads, setPreparedDownloads] = useState<PreparedDownload[]>([]);
+    const deleteInProgress = useRef(false);
     const downloadInProgress = useRef(false);
     // TanStack exposes mutable table APIs, so the React compiler safely skips this hook.
     // eslint-disable-next-line react-hooks/incompatible-library
@@ -126,10 +135,39 @@ export function FileList({ files, onDelete, onDownload, onRename }: FileListProp
         }
     }
 
-    function confirmDelete() {
-        onDelete?.(filesToDelete);
-        setFilesToDelete([]);
-        table.resetRowSelection();
+    async function confirmDelete() {
+        if (!onDelete || deleteInProgress.current || filesToDelete.length === 0) return;
+
+        deleteInProgress.current = true;
+        setIsDeleting(true);
+        setDeleteError('');
+        try {
+            const result = await onDelete(filesToDelete);
+            const deletedIds = new Set(result.deletedFileIds);
+            setRowSelection((selection) =>
+                Object.fromEntries(
+                    Object.entries(selection).filter(([fileId]) => !deletedIds.has(fileId))
+                )
+            );
+
+            if (result.failedFileIds.length === 0) {
+                setFilesToDelete([]);
+            } else {
+                const failedIds = new Set(result.failedFileIds);
+                setFilesToDelete((currentFiles) =>
+                    currentFiles.filter((file) => failedIds.has(file.fileId))
+                );
+                setDeleteError(
+                    result.error ??
+                        `${result.failedFileIds.length} ${result.failedFileIds.length === 1 ? 'file was' : 'files were'} not deleted. Please try again.`
+                );
+            }
+        } catch {
+            setDeleteError('Unable to delete the selected files. Please try again.');
+        } finally {
+            deleteInProgress.current = false;
+            setIsDeleting(false);
+        }
     }
 
     async function confirmRename(fileName: string) {
@@ -171,8 +209,11 @@ export function FileList({ files, onDelete, onDownload, onRename }: FileListProp
                     <Button
                         variant='destructive'
                         size='sm'
-                        disabled={selectedCount === 0}
-                        onClick={() => setFilesToDelete(selectedFiles)}
+                        disabled={selectedCount === 0 || isDeleting || !onDelete}
+                        onClick={() => {
+                            setDeleteError('');
+                            setFilesToDelete(selectedFiles);
+                        }}
                     >
                         <HugeiconsIcon icon={Delete02Icon} strokeWidth={1.8} />
                         Delete
@@ -254,7 +295,10 @@ export function FileList({ files, onDelete, onDownload, onRename }: FileListProp
                                     </ContextMenuTrigger>
                                     <FileActionsContextMenu
                                         isDownloading={isDownloading}
-                                        onDelete={() => setFilesToDelete([row.original])}
+                                        onDelete={() => {
+                                            setDeleteError('');
+                                            setFilesToDelete([row.original]);
+                                        }}
                                         onDownload={() => void downloadFiles([row.original])}
                                         onRename={() => setFileToRename(row.original)}
                                     />
@@ -273,10 +317,15 @@ export function FileList({ files, onDelete, onDownload, onRename }: FileListProp
             />
             <DeleteFilesDialog
                 fileNames={filesToDelete.map((file) => file.name)}
+                errorMessage={deleteError}
+                isPending={isDeleting}
                 onOpenChange={(open) => {
-                    if (!open) setFilesToDelete([]);
+                    if (!open) {
+                        setDeleteError('');
+                        setFilesToDelete([]);
+                    }
                 }}
-                onConfirm={confirmDelete}
+                onConfirm={() => void confirmDelete()}
             />
             {fileToRename && (
                 <RenameFileDialog

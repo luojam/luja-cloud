@@ -4,7 +4,11 @@ import { createFileRoute } from '@tanstack/react-router';
 
 import { DashboardShell } from '@/components/dashboard/dashboard-shell';
 import type { PreparedDownload } from '@/components/dashboard/download-files-dialog';
-import { FileList, type DownloadBatchResult } from '@/components/dashboard/file-list';
+import {
+    FileList,
+    type DeleteBatchResult,
+    type DownloadBatchResult,
+} from '@/components/dashboard/file-list';
 import { FileListSkeleton } from '@/components/dashboard/file-list-skeleton';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,6 +20,7 @@ import {
 } from '@/components/ui/empty';
 import {
     completeUpload,
+    deleteFile,
     FilesApiError,
     getDownloadUrl,
     initiateUpload,
@@ -65,6 +70,32 @@ function DashboardPage() {
         }
 
         return { downloads, failed: files.length - downloads.length };
+    }
+
+    async function deleteFiles(files: FileRecord[]): Promise<DeleteBatchResult> {
+        const deletedFileIds: string[] = [];
+        const failedFileIds: string[] = [];
+        let errorMessage: string | undefined;
+
+        // Keep deletion sequential so selecting many rows cannot fan out unbounded requests.
+        for (const file of files) {
+            const controller = new AbortController();
+            try {
+                await deleteFile(getToken, file.fileId, controller.signal);
+                deletedFileIds.push(file.fileId);
+            } catch (error) {
+                failedFileIds.push(file.fileId);
+                errorMessage =
+                    error instanceof FilesApiError
+                        ? error.message
+                        : 'Unable to delete the selected files. Please try again.';
+            }
+        }
+
+        if (deletedFileIds.length > 0) {
+            await queryClient.invalidateQueries({ queryKey: filesQueryKey });
+        }
+        return { deletedFileIds, failedFileIds, error: errorMessage };
     }
 
     async function renameSelectedFile(file: FileRecord, name: string): Promise<void> {
@@ -138,6 +169,7 @@ function DashboardPage() {
                 ) : (
                     <FileList
                         files={filesQuery.data}
+                        onDelete={deleteFiles}
                         onDownload={downloadFiles}
                         onRename={renameSelectedFile}
                     />

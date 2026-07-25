@@ -257,6 +257,20 @@ export async function completeUpload(
     return parseFilePayload(await responseJson(response, failureMessage), failureMessage);
 }
 
+export async function deleteFile(
+    getToken: GetToken,
+    fileId: string,
+    signal: AbortSignal
+): Promise<void> {
+    await authenticatedRequest(
+        getToken,
+        `/api/files/${encodeURIComponent(fileId)}`,
+        { method: 'DELETE' },
+        signal,
+        'Unable to delete this file. Please try again.'
+    );
+}
+
 export async function renameFile(
     getToken: GetToken,
     fileId: string,

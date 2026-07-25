@@ -153,6 +153,33 @@ export class LujaCloudStack extends cdk.Stack {
             })
         );
 
+        const deleteFileLogGroup = new logs.LogGroup(this, 'DeleteFileFunctionLogs', {
+            retention: logs.RetentionDays.ONE_WEEK,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+        const deleteFileFunction = new lambdaNodejs.NodejsFunction(this, 'DeleteFileFunction', {
+            entry: path.join(__dirname, '..', 'functions', 'delete-file.ts'),
+            handler: 'handler',
+            runtime: lambda.Runtime.NODEJS_22_X,
+            logGroup: deleteFileLogGroup,
+            environment: {
+                FILES_TABLE_NAME: filesTable.tableName,
+                FILES_BUCKET_NAME: userFilesBucket.bucketName,
+            },
+        });
+        deleteFileFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['dynamodb:GetItem', 'dynamodb:DeleteItem'],
+                resources: [filesTable.tableArn],
+            })
+        );
+        deleteFileFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['s3:DeleteObject'],
+                resources: [userFilesBucket.arnForObjects('files/*')],
+            })
+        );
+
         const completeUploadLogGroup = new logs.LogGroup(this, 'CompleteUploadFunctionLogs', {
             retention: logs.RetentionDays.ONE_WEEK,
             removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -234,6 +261,13 @@ export class LujaCloudStack extends cdk.Stack {
             path: '/api/files/{id}',
             methods: [apigatewayv2.HttpMethod.PATCH],
             integration: new HttpLambdaIntegration('RenameFileIntegration', renameFileFunction),
+            authorizer,
+        });
+
+        api.addRoutes({
+            path: '/api/files/{id}',
+            methods: [apigatewayv2.HttpMethod.DELETE],
+            integration: new HttpLambdaIntegration('DeleteFileIntegration', deleteFileFunction),
             authorizer,
         });
 
