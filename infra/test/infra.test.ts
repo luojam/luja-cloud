@@ -380,16 +380,15 @@ test('schedules cleanup daily with bounded retries and invocation permission', (
     });
 });
 
-test('configures cleanup timeout, single concurrency, destructible logs, and least privilege', () => {
+test('configures cleanup timeout, destructible logs, and least privilege', () => {
     const template = stackTemplate();
     const functions = template.findResources('AWS::Lambda::Function');
     const cleanupFunction = Object.entries(functions).find(([logicalId]) =>
         logicalId.includes('CleanupUploadsFunction')
     )?.[1];
     expect(cleanupFunction).toBeDefined();
-    expect(cleanupFunction?.Properties).toEqual(
-        expect.objectContaining({ Timeout: 300, ReservedConcurrentExecutions: 1 })
-    );
+    expect(cleanupFunction?.Properties).toEqual(expect.objectContaining({ Timeout: 300 }));
+    expect(cleanupFunction?.Properties).not.toHaveProperty('ReservedConcurrentExecutions');
 
     const logGroupReference = cleanupFunction?.Properties.LoggingConfig.LogGroup.Ref;
     const logGroup = template.findResources('AWS::Logs::LogGroup')[logGroupReference];

@@ -231,7 +231,6 @@ export class LujaCloudStack extends cdk.Stack {
             handler: 'handler',
             runtime: lambda.Runtime.NODEJS_22_X,
             timeout: cdk.Duration.minutes(5),
-            reservedConcurrentExecutions: 1,
             logGroup: cleanupLogGroup,
             environment: {
                 FILES_TABLE_NAME: filesTable.tableName,
