@@ -79,6 +79,7 @@ createRoot(document.getElementById('root')!).render(
             routerPush={routerPush}
             routerReplace={routerReplace}
             appearance={{ theme: dark }}
+            localization={{ signIn: { start: { title: 'Sign in' } } }}
         >
             <QueryClientProvider client={queryClient}>
                 <AppRouter />

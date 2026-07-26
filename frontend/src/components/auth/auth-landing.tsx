@@ -1,5 +1,7 @@
 import { SignIn, SignUp } from '@clerk/react';
+import type { ComponentProps } from 'react';
 import { AuthBackground } from '@/components/auth/auth-background';
+import { BrandMark } from '@/components/auth/brand-mark';
 import { Skeleton } from '@/components/ui/skeleton';
 
 type AuthMode = 'sign-in' | 'sign-up';
@@ -9,78 +11,109 @@ function ClerkPanelSkeleton({ mode }: { mode: AuthMode }) {
 
     return (
         <div
-            className='bg-card flex w-full flex-col gap-6 rounded-xl border p-8'
+            className='bg-card flex w-full flex-col gap-7 rounded-xl border p-6 sm:p-8'
             role='status'
             aria-label={`Loading ${formName} form`}
         >
             {/* Follow Clerk's compact form rhythm without guessing a fixed panel height. */}
-            <div className='flex flex-col items-center gap-3'>
-                <Skeleton className='h-8 w-36' />
-                <Skeleton className='h-4 w-56' />
-            </div>
-            <Skeleton className='h-10 w-full' />
+            <Skeleton className='h-7 w-32' />
+            <Skeleton className='h-9 w-full' />
             <div className='flex items-center gap-3'>
                 <Skeleton className='h-px flex-1' />
                 <Skeleton className='h-4 w-8' />
                 <Skeleton className='h-px flex-1' />
             </div>
             <div className='flex flex-col gap-3'>
-                <Skeleton className='h-4 w-24' />
-                <Skeleton className='h-10 w-full' />
+                <Skeleton className='h-4 w-20' />
+                <Skeleton className='h-9 w-full' />
             </div>
-            <Skeleton className='h-10 w-full' />
-            <div className='flex justify-center gap-2'>
+            <Skeleton className='h-9 w-full' />
+            <div className='flex gap-2'>
                 <Skeleton className='h-4 w-28' />
-                <Skeleton className='h-4 w-16' />
+                <Skeleton className='h-4 w-14' />
             </div>
         </div>
     );
 }
 
+type ClerkAppearance = NonNullable<ComponentProps<typeof SignIn>['appearance']>;
+
 const clerkAppearance = {
+    options: {
+        elevation: 'flush',
+        logoPlacement: 'none',
+    },
     variables: {
         colorPrimary: 'var(--primary)',
+        colorPrimaryForeground: 'var(--primary-foreground)',
+        colorForeground: 'var(--foreground)',
+        colorMutedForeground: 'var(--muted-foreground)',
+        colorBackground: 'transparent',
+        colorInput: 'var(--input)',
+        colorInputForeground: 'var(--foreground)',
+        colorBorder: 'var(--border)',
+        colorRing: 'var(--ring)',
+        fontFamily: 'var(--font-sans)',
+        fontSize: '0.875rem',
+        borderRadius: 'var(--radius-md)',
+        spacing: '0.875rem',
     },
-};
+    elements: {
+        rootBox: 'w-full',
+        cardBox: 'w-full',
+        header: 'items-start text-left',
+        headerTitle: 'text-xl font-medium tracking-[-0.025em]',
+        headerSubtitle: 'hidden',
+        socialButtonsBlockButton: {
+            borderWidth: 0,
+            boxShadow: 'none !important',
+            '&:focus-visible': {
+                outline: '2px solid var(--ring)',
+                outlineOffset: '2px',
+            },
+        },
+        dividerLine: 'bg-border',
+        dividerText: 'text-muted-foreground',
+        formFieldInput: 'shadow-xs',
+        formButtonPrimary:
+            'shadow-none transition-[background-color,transform] active:translate-y-px',
+        footerAction: 'justify-start',
+        footerActionText: 'text-muted-foreground',
+    },
+    captcha: {
+        theme: 'dark',
+    },
+} satisfies ClerkAppearance;
 
 function ClerkPanel({ mode }: { mode: AuthMode }) {
-    return (
-        <div className='w-full max-w-[25rem]'>
-            {mode === 'sign-in' ? (
-                <SignIn
-                    withSignUp={false}
-                    signUpUrl='/sign-up'
-                    routing='hash'
-                    forceRedirectUrl='/dashboard'
-                    fallback={<ClerkPanelSkeleton mode={mode} />}
-                    appearance={clerkAppearance}
-                />
-            ) : (
-                <SignUp
-                    signInUrl='/sign-in'
-                    routing='hash'
-                    forceRedirectUrl='/dashboard'
-                    fallback={<ClerkPanelSkeleton mode={mode} />}
-                    appearance={clerkAppearance}
-                />
-            )}
-        </div>
+    return mode === 'sign-in' ? (
+        <SignIn
+            withSignUp={false}
+            signUpUrl='/sign-up'
+            routing='hash'
+            forceRedirectUrl='/dashboard'
+            fallback={<ClerkPanelSkeleton mode={mode} />}
+            appearance={clerkAppearance}
+        />
+    ) : (
+        <SignUp
+            signInUrl='/sign-in'
+            routing='hash'
+            forceRedirectUrl='/dashboard'
+            fallback={<ClerkPanelSkeleton mode={mode} />}
+            appearance={clerkAppearance}
+        />
     );
 }
 
 export function AuthLanding({ mode }: { mode: AuthMode }) {
     return (
         <AuthBackground>
-            <section className='relative z-1 mx-auto grid min-h-[calc(100svh-4.5rem)] w-[calc(100%-2.5rem)] max-w-6xl grid-cols-[minmax(0,1fr)_minmax(21rem,28rem)] items-center gap-[clamp(3rem,9vw,10rem)] pt-16 pb-24 max-[800px]:grid-cols-1 max-[800px]:pt-12'>
-                <div>
-                    <h1 className='mb-6 max-w-[40rem] text-[clamp(2.6rem,5vw,5rem)] leading-[1.02] font-[560] tracking-[-0.055em]'>
-                        luja Cloud
-                    </h1>
-                    <p className='max-w-[31rem] text-[clamp(0.9rem,1.4vw,1.05rem)] leading-[1.75] text-current/62'>
-                        plain useful
-                    </p>
+            <section className='relative z-1 flex min-h-svh items-center justify-center px-5 py-10 sm:px-8 sm:py-14'>
+                <div className='flex w-full max-w-[25rem] flex-col gap-8 sm:gap-10'>
+                    <BrandMark />
+                    <ClerkPanel mode={mode} />
                 </div>
-                <ClerkPanel mode={mode} />
             </section>
         </AuthBackground>
     );
