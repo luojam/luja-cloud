@@ -137,3 +137,133 @@
     caret-color: var(--foreground);
     transition: background-color 9999s ease-out;
 }
+
+.auth-scene {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.auth-scene__light {
+    position: absolute;
+    width: 48rem;
+    height: 48rem;
+    border-radius: 9999px;
+    filter: blur(80px);
+}
+
+.auth-scene__light--ruby {
+    top: -23rem;
+    right: -17rem;
+    background: radial-gradient(circle, oklch(0.645 0.246 16.439 / 16%), transparent 68%);
+}
+
+.auth-scene__light--violet {
+    bottom: -26rem;
+    left: -19rem;
+    background: radial-gradient(circle, oklch(0.56 0.12 304 / 12%), transparent 69%);
+}
+
+@media (min-width: 48rem) {
+    .auth-scene__light {
+        width: 68rem;
+        height: 68rem;
+        filter: blur(104px);
+    }
+
+    .auth-scene__light--ruby {
+        top: -37rem;
+        right: -23rem;
+    }
+
+    .auth-scene__light--violet {
+        bottom: -40rem;
+        left: -27rem;
+    }
+
+    /* The orbit crosses the canvas instead of targeting the form. */
+    .auth-orbit {
+        position: absolute;
+        top: 43%;
+        left: 63%;
+        width: 112vw;
+        aspect-ratio: 2 / 1;
+        transform: translate(-50%, -50%) rotate(-11deg);
+    }
+
+    .auth-orbit__ring {
+        position: absolute;
+        inset: 0;
+        border: 1px solid oklch(1 0 0 / 8%);
+        border-radius: 50%;
+    }
+
+    .auth-orbit__ring--inner {
+        inset: 20% 19%;
+        border-color: oklch(0.645 0.246 16.439 / 15%);
+    }
+
+    .auth-orbit__marker {
+        position: absolute;
+        width: 0.4rem;
+        height: 0.4rem;
+        border-radius: 50%;
+        background: oklch(0.7 0.22 16);
+        box-shadow: 0 0 1.25rem oklch(0.645 0.246 16.439 / 70%);
+    }
+
+    .auth-orbit__marker--one {
+        top: 18%;
+        right: 35%;
+    }
+
+    .auth-orbit__marker--two {
+        bottom: 18%;
+        left: 25%;
+        width: 0.25rem;
+        height: 0.25rem;
+        opacity: 0.7;
+    }
+
+    .auth-orbit__marker--three {
+        top: 18%;
+        left: 25%;
+        width: 0.22rem;
+        height: 0.22rem;
+        opacity: 0.65;
+    }
+
+    .auth-orbit__marker--four {
+        right: 35%;
+        bottom: 18%;
+        width: 0.3rem;
+        height: 0.3rem;
+        opacity: 0.8;
+    }
+
+    .auth-orbit__marker--five {
+        top: 18%;
+        right: 50%;
+        width: 0.22rem;
+        height: 0.22rem;
+        opacity: 0.65;
+    }
+
+    .auth-orbit__marker--six {
+        bottom: 18%;
+        left: 42%;
+        width: 0.24rem;
+        height: 0.24rem;
+        opacity: 0.7;
+    }
+
+    .auth-orbit__marker--seven {
+        top: 55%;
+        left: 5%;
+        width: 0.3rem;
+        height: 0.3rem;
+        background: oklch(0.723 0.014 214.4 / 68%);
+        box-shadow: 0 0 0.8rem oklch(0.723 0.014 214.4 / 20%);
+    }
+}

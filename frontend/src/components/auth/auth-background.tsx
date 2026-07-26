@@ -6,15 +6,22 @@ interface AuthBackgroundProps {
 
 export function AuthBackground({ children }: AuthBackgroundProps) {
     return (
-        <main className='dark bg-background text-foreground relative min-h-svh overflow-hidden'>
-            <div
-                className='absolute -top-72 -right-40 size-192 rounded-full bg-[radial-gradient(circle_at_35%_40%,rgba(251,113,133,0.14),rgba(244,63,94,0.02)_58%,transparent_74%)] blur-3xl'
-                aria-hidden='true'
-            />
-            <div
-                className='absolute -bottom-88 -left-60 size-200 rounded-full bg-[radial-gradient(circle_at_center,rgba(196,181,253,0.12),rgba(219,39,119,0.015)_62%,transparent_76%)] blur-3xl'
-                aria-hidden='true'
-            />
+        <main className='auth-background dark bg-background text-foreground relative min-h-svh overflow-hidden'>
+            <div className='auth-scene' aria-hidden='true'>
+                <div className='auth-scene__light auth-scene__light--ruby' />
+                <div className='auth-scene__light auth-scene__light--violet' />
+                <div className='auth-orbit'>
+                    <span className='auth-orbit__ring auth-orbit__ring--outer' />
+                    <span className='auth-orbit__ring auth-orbit__ring--inner' />
+                    <span className='auth-orbit__marker auth-orbit__marker--one' />
+                    <span className='auth-orbit__marker auth-orbit__marker--two' />
+                    <span className='auth-orbit__marker auth-orbit__marker--three' />
+                    <span className='auth-orbit__marker auth-orbit__marker--four' />
+                    <span className='auth-orbit__marker auth-orbit__marker--five' />
+                    <span className='auth-orbit__marker auth-orbit__marker--six' />
+                    <span className='auth-orbit__marker auth-orbit__marker--seven' />
+                </div>
+            </div>
             {children}
         </main>
     );
