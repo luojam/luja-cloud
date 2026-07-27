@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpJwtAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
@@ -21,11 +22,21 @@ const API_AUDIENCE = 'luja-cloud-api';
 
 export interface LujaCloudStackProps extends cdk.StackProps {
     readonly clerkIssuer: string;
+    readonly customDomain?: string;
+    readonly certificateArn?: string;
 }
 
 export class LujaCloudStack extends cdk.Stack {
     constructor(scope: Construct, id: string, props: LujaCloudStackProps) {
         super(scope, id, props);
+
+        if (Boolean(props.customDomain) !== Boolean(props.certificateArn)) {
+            throw new Error('customDomain and certificateArn must be provided together.');
+        }
+
+        const certificate = props.certificateArn
+            ? acm.Certificate.fromCertificateArn(this, 'FrontendCertificate', props.certificateArn)
+            : undefined;
 
         const filesTable = new dynamodb.Table(this, 'FilesTable', {
             partitionKey: { name: 'ownerId', type: dynamodb.AttributeType.STRING },
@@ -368,6 +379,8 @@ function handler(event) {
         const distribution = new cloudfront.Distribution(this, 'FrontendDistribution', {
             defaultRootObject: 'index.html',
             priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+            certificate,
+            domainNames: props.customDomain ? [props.customDomain] : undefined,
             defaultBehavior: {
                 origin: origins.S3BucketOrigin.withOriginAccessControl(frontendBucket),
                 viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -395,6 +408,12 @@ function handler(event) {
 
         // Apply deployment CORS after CloudFront exists, avoiding a bucket → distribution → API
         // dependency cycle while still restricting uploads to known origins.
+        const deploymentAllowedOrigins = [
+            'http://localhost:5173',
+            'http://localhost:4173',
+            `https://${distribution.distributionDomainName}`,
+            ...(props.customDomain ? [`https://${props.customDomain}`] : []),
+        ];
         new customResources.AwsCustomResource(this, 'UserFilesDeploymentCors', {
             onCreate: {
                 service: 'S3',
@@ -405,11 +424,7 @@ function handler(event) {
                         CORSRules: [
                             {
                                 AllowedMethods: ['PUT'],
-                                AllowedOrigins: [
-                                    'http://localhost:5173',
-                                    'http://localhost:4173',
-                                    `https://${distribution.distributionDomainName}`,
-                                ],
+                                AllowedOrigins: deploymentAllowedOrigins,
                                 AllowedHeaders: ['content-type'],
                                 MaxAgeSeconds: 300,
                             },
@@ -429,11 +444,7 @@ function handler(event) {
                         CORSRules: [
                             {
                                 AllowedMethods: ['PUT'],
-                                AllowedOrigins: [
-                                    'http://localhost:5173',
-                                    'http://localhost:4173',
-                                    `https://${distribution.distributionDomainName}`,
-                                ],
+                                AllowedOrigins: deploymentAllowedOrigins,
                                 AllowedHeaders: ['content-type'],
                                 MaxAgeSeconds: 300,
                             },
@@ -466,8 +477,14 @@ function handler(event) {
             distributionPaths: ['/*'],
         });
 
+        new cdk.CfnOutput(this, 'CloudFrontDomainName', {
+            value: distribution.distributionDomainName,
+        });
+
         new cdk.CfnOutput(this, 'ApplicationUrl', {
-            value: `https://${distribution.distributionDomainName}`,
+            value: props.customDomain
+                ? `https://${props.customDomain}`
+                : `https://${distribution.distributionDomainName}`,
         });
     }
 }

@@ -67,6 +67,36 @@ AWS_PROFILE=<profile> npx cdk bootstrap aws://<account-id>/<region>
 
 This uses the repository-local CDK CLI rather than requiring a global installation.
 
+## Configure a custom domain with Cloudflare DNS
+
+CloudFront requires an ACM certificate in `us-east-1`, even when this stack is deployed in another region. DNS can remain hosted by Cloudflare; Route 53 is not required.
+
+1. In the AWS account that deploys this stack, request an ACM public certificate for the exact subdomain (for example, `cloud.example.com`). Select **DNS validation** and make sure the certificate is created in **US East (N. Virginia) / `us-east-1`**.
+2. ACM displays a validation CNAME. Add that exact CNAME name and target in Cloudflare DNS. Leave it **DNS only**. Cloudflare may omit the zone suffix when displaying the saved name; this is normal.
+3. Wait until ACM reports the certificate as **Issued**, then copy its ARN.
+4. Add the hostname (without `https://` or a path) and certificate ARN to `infra/.env`:
+
+    ```dotenv
+    CUSTOM_DOMAIN=cloud.example.com
+    CERTIFICATE_ARN=arn:aws:acm:us-east-1:<account-id>:certificate/<certificate-id>
+    ```
+
+5. Deploy the stack. CDK adds the hostname and certificate to the CloudFront distribution and includes the custom HTTPS origin in the upload bucket's CORS policy.
+6. Read the `CloudFrontDomainName` stack output, then create this Cloudflare DNS record:
+
+    ```text
+    Type: CNAME
+    Name: cloud
+    Target: <distribution-domain>.cloudfront.net
+    Proxy status: DNS only
+    ```
+
+    **DNS only** avoids placing Cloudflare's proxy in front of CloudFront and is the recommended setup here. The ACM validation CNAME must remain in Cloudflare so ACM can renew the certificate automatically.
+
+7. Add `https://cloud.example.com` to the Clerk instance's allowed origins and redirect configuration, then test sign-in, API requests, and a direct upload through the custom URL.
+
+If certificate issuance remains pending, verify the validation CNAME and any restrictive CAA records in Cloudflare. `CUSTOM_DOMAIN` and `CERTIFICATE_ARN` are optional, but they must either both be set or both be omitted.
+
 ## Configure Clerk
 
 1. Open the intended Clerk instance.
@@ -92,7 +122,7 @@ This uses the repository-local CDK CLI rather than requiring a global installati
 
 5. Save the customization.
 6. The issuer must exactly match the JWT `iss` claim, including the scheme. Do not add, remove, or alter a path or trailing slash.
-7. After deployment, add the generated CloudFront domain to the Clerk instance's allowed application origins and redirect configuration wherever the instance requires it.
+7. After deployment, add the `ApplicationUrl` origin (the custom domain when configured, otherwise the generated CloudFront domain) to the Clerk instance's allowed application origins and redirect configuration wherever the instance requires it.
 8. Sign out and back in if the browser session existed before the audience customization. This creates a fresh session token containing the new `aud` claim.
 
 This application uses the normal active Clerk session token with a customized audience claim; it does not use a custom Clerk JWT template.
@@ -141,12 +171,13 @@ AWS_PROFILE=<profile> npm run deploy
 The command compiles the infrastructure, creates a Vite production build using `frontend/.env`, and runs the local CDK CLI. CDK uploads the frontend assets and creates a CloudFront invalidation. At completion, CDK prints stack outputs similar to:
 
 ```text
-LujaCloudStack.ApplicationUrl = https://<distribution-domain>.cloudfront.net
+LujaCloudStack.ApplicationUrl = https://<custom-domain-or-distribution-domain>
+LujaCloudStack.CloudFrontDomainName = <distribution-domain>.cloudfront.net
 LujaCloudStack.SessionApiUrl = https://<api-id>.execute-api.<region>.amazonaws.com/api/session
 LujaCloudStack.CleanupUploadsFunctionName = <cleanup-function-name>
 ```
 
-Use `ApplicationUrl` for the application and for all browser/API smoke tests. Deployment uses generated physical resource names and a single environment-specific, stage-less `LujaCloudStack` in the account and region selected by the AWS profile.
+Use `ApplicationUrl` for the application and for all browser/API smoke tests. When a custom domain is configured, `CloudFrontDomainName` is the target for its Cloudflare CNAME. Deployment uses generated physical resource names and a single environment-specific, stage-less `LujaCloudStack` in the account and region selected by the AWS profile.
 
 ## Manual smoke test
 

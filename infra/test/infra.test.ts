@@ -12,6 +12,44 @@ function stackTemplate(): Template {
     return Template.fromStack(stack);
 }
 
+test('configures a custom CloudFront alias and certificate when supplied', () => {
+    const app = new cdk.App();
+    const stack = new LujaCloudStack(app, 'CustomDomainTestStack', {
+        clerkIssuer: 'https://clerk.example.test',
+        customDomain: 'cloud.example.com',
+        certificateArn:
+            'arn:aws:acm:us-east-1:111111111111:certificate/00000000-0000-0000-0000-000000000000',
+        env: { account: '111111111111', region: 'eu-west-1' },
+    });
+    const template = Template.fromStack(stack);
+
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+        DistributionConfig: {
+            Aliases: ['cloud.example.com'],
+            ViewerCertificate: {
+                AcmCertificateArn:
+                    'arn:aws:acm:us-east-1:111111111111:certificate/00000000-0000-0000-0000-000000000000',
+                SslSupportMethod: 'sni-only',
+                MinimumProtocolVersion: 'TLSv1.2_2021',
+            },
+        },
+    });
+    template.hasOutput('ApplicationUrl', { Value: 'https://cloud.example.com' });
+});
+
+test('rejects incomplete custom-domain configuration', () => {
+    const app = new cdk.App();
+
+    expect(
+        () =>
+            new LujaCloudStack(app, 'IncompleteCustomDomainTestStack', {
+                clerkIssuer: 'https://clerk.example.test',
+                customDomain: 'cloud.example.com',
+                env: { account: '111111111111', region: 'eu-west-1' },
+            })
+    ).toThrow('customDomain and certificateArn must be provided together.');
+});
+
 test('provisions the destructively removed on-demand file metadata table', () => {
     const template = stackTemplate();
 
