@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Luja Cloud</title>
+  <desc id="desc">A white cloud with a ruby accent dot on a dark rounded square.</desc>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#24272a"/>
+  <path
+    d="M18.5 45.5H46a9.5 9.5 0 0 0 .8-19A15.5 15.5 0 0 0 17.3 28a9 9 0 0 0 1.2 17.5Z"
+    fill="none"
+    stroke="#f7f7f7"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="46.5" cy="21" r="5.5" fill="#d5506b"/>
+</svg>
