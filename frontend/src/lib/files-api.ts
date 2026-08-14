@@ -1,11 +1,15 @@
+import {
+    authenticatedRequest,
+    responseJson,
+    type AuthenticatedRequestFailureKind,
+    type GetToken,
+} from '@/lib/authenticated-request';
 import type { FileRecord } from '@/lib/files';
 
 export const MAX_UPLOAD_SIZE_BYTES = 100 * 1024 * 1024;
 export const DEFAULT_UPLOAD_MIME_TYPE = 'application/octet-stream';
 
 export type FilesApiFailureKind = 'authentication' | 'retryable' | 'generic';
-
-type GetToken = () => Promise<string | null>;
 
 type InitiatedUpload = {
     fileId: string;
@@ -22,7 +26,11 @@ export class FilesApiError extends Error {
     }
 }
 
-const fileRecordKeys = [
+function createFilesApiError(kind: AuthenticatedRequestFailureKind, message: string) {
+    return new FilesApiError(kind, message);
+}
+
+const baseFileRecordKeys = [
     'fileId',
     'name',
     'mimeType',
@@ -30,6 +38,9 @@ const fileRecordKeys = [
     'createdAt',
     'modifiedAt',
 ] as const;
+const fileRecordKeys = [...baseFileRecordKeys, 'isShared'] as const;
+
+type BaseFileRecord = Omit<FileRecord, 'isShared'>;
 
 function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]) {
     const actualKeys = Object.keys(value);
@@ -44,12 +55,12 @@ function isTimestamp(value: unknown): value is string {
     return typeof value === 'string' && !Number.isNaN(Date.parse(value));
 }
 
-function isFileRecord(value: unknown): value is FileRecord {
+function isBaseFileRecord(value: unknown): value is BaseFileRecord {
     if (typeof value !== 'object' || value === null) return false;
 
     const record = value as Record<string, unknown>;
     return (
-        hasOnlyKeys(record, fileRecordKeys) &&
+        hasOnlyKeys(record, baseFileRecordKeys) &&
         isNonEmptyString(record.fileId) &&
         isNonEmptyString(record.name) &&
         record.name.length <= 255 &&
@@ -60,6 +71,22 @@ function isFileRecord(value: unknown): value is FileRecord {
         isTimestamp(record.createdAt) &&
         isTimestamp(record.modifiedAt)
     );
+}
+
+function isFileRecord(value: unknown): value is FileRecord {
+    if (typeof value !== 'object' || value === null) return false;
+
+    const record = value as Record<string, unknown>;
+    if (!hasOnlyKeys(record, fileRecordKeys) || typeof record.isShared !== 'boolean') return false;
+
+    return isBaseFileRecord({
+        fileId: record.fileId,
+        name: record.name,
+        mimeType: record.mimeType,
+        sizeBytes: record.sizeBytes,
+        createdAt: record.createdAt,
+        modifiedAt: record.modifiedAt,
+    });
 }
 
 function parseFilesPayload(value: unknown): FileRecord[] {
@@ -74,12 +101,12 @@ function parseFilesPayload(value: unknown): FileRecord[] {
     return payload.files;
 }
 
-function parseFilePayload(value: unknown, failureMessage: string): FileRecord {
+function parseFilePayload(value: unknown, failureMessage: string): BaseFileRecord {
     if (typeof value !== 'object' || value === null) {
         throw new FilesApiError('generic', failureMessage);
     }
     const payload = value as Record<string, unknown>;
-    if (!hasOnlyKeys(payload, ['file']) || !isFileRecord(payload.file)) {
+    if (!hasOnlyKeys(payload, ['file']) || !isBaseFileRecord(payload.file)) {
         throw new FilesApiError('generic', failureMessage);
     }
     return payload.file;
@@ -125,66 +152,18 @@ function parseInitiatedUpload(value: unknown): InitiatedUpload {
     return { fileId: payload.fileId, uploadUrl: payload.uploadUrl };
 }
 
-async function authenticatedRequest(
-    getToken: GetToken,
-    path: string,
-    init: RequestInit,
-    signal: AbortSignal,
-    failureMessage: string
-) {
-    let token: string | null;
-    try {
-        token = await getToken();
-    } catch {
-        if (signal.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
-        throw new FilesApiError('generic', failureMessage);
-    }
-
-    if (signal.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
-    if (!token) throw new FilesApiError('authentication', 'Your sign-in could not be verified.');
-
-    let response: Response;
-    try {
-        response = await fetch(path, {
-            ...init,
-            headers: {
-                Accept: 'application/json',
-                Authorization: `Bearer ${token}`,
-                ...init.headers,
-            },
-            cache: 'no-store',
-            signal,
-        });
-    } catch (error) {
-        if (signal.aborted) throw error;
-        throw new FilesApiError('retryable', failureMessage);
-    }
-
-    if (response.status === 401 || response.status === 403) {
-        throw new FilesApiError('authentication', 'Your sign-in could not be verified.');
-    }
-    if (response.status >= 500) throw new FilesApiError('retryable', failureMessage);
-    if (!response.ok) throw new FilesApiError('generic', failureMessage);
-    return response;
-}
-
-async function responseJson(response: Response, failureMessage: string): Promise<unknown> {
-    try {
-        return await response.json();
-    } catch {
-        throw new FilesApiError('generic', failureMessage);
-    }
-}
-
 export async function listFiles(getToken: GetToken, signal: AbortSignal): Promise<FileRecord[]> {
     const response = await authenticatedRequest(
         getToken,
         '/api/files',
         { method: 'GET' },
         signal,
-        'Unable to load files.'
+        'Unable to load files.',
+        createFilesApiError
     );
-    return parseFilesPayload(await responseJson(response, 'Unable to load files.'));
+    return parseFilesPayload(
+        await responseJson(response, 'Unable to load files.', createFilesApiError)
+    );
 }
 
 export async function getDownloadUrl(
@@ -199,9 +178,13 @@ export async function getDownloadUrl(
         `/api/files/${encodeURIComponent(fileId)}/download`,
         { method: 'GET' },
         signal,
-        failureMessage
+        failureMessage,
+        createFilesApiError
     );
-    return parseDownloadUrl(await responseJson(response, failureMessage), fileName);
+    return parseDownloadUrl(
+        await responseJson(response, failureMessage, createFilesApiError),
+        fileName
+    );
 }
 
 export async function initiateUpload(
@@ -219,9 +202,12 @@ export async function initiateUpload(
             body: JSON.stringify({ name: file.name, mimeType, sizeBytes: file.size }),
         },
         signal,
-        `Unable to upload ${file.name}.`
+        `Unable to upload ${file.name}.`,
+        createFilesApiError
     );
-    return parseInitiatedUpload(await responseJson(response, `Unable to upload ${file.name}.`));
+    return parseInitiatedUpload(
+        await responseJson(response, `Unable to upload ${file.name}.`, createFilesApiError)
+    );
 }
 
 export async function putUpload(uploadUrl: string, file: File, signal: AbortSignal): Promise<void> {
@@ -251,10 +237,15 @@ export async function completeUpload(
         `/api/files/${encodeURIComponent(fileId)}/complete`,
         { method: 'POST' },
         signal,
-        'The uploaded file could not be verified.'
+        'The uploaded file could not be verified.',
+        createFilesApiError
     );
     const failureMessage = 'The uploaded file could not be verified.';
-    return parseFilePayload(await responseJson(response, failureMessage), failureMessage);
+    const file = parseFilePayload(
+        await responseJson(response, failureMessage, createFilesApiError),
+        failureMessage
+    );
+    return { ...file, isShared: false };
 }
 
 export async function deleteFile(
@@ -267,7 +258,8 @@ export async function deleteFile(
         `/api/files/${encodeURIComponent(fileId)}`,
         { method: 'DELETE' },
         signal,
-        'Unable to delete this file. Please try again.'
+        'Unable to delete this file. Please try again.',
+        createFilesApiError
     );
 }
 
@@ -276,7 +268,7 @@ export async function renameFile(
     fileId: string,
     name: string,
     signal: AbortSignal
-): Promise<FileRecord> {
+): Promise<BaseFileRecord> {
     const failureMessage = 'Unable to rename this file. Please try again.';
     const response = await authenticatedRequest(
         getToken,
@@ -287,9 +279,13 @@ export async function renameFile(
             body: JSON.stringify({ name }),
         },
         signal,
+        failureMessage,
+        createFilesApiError
+    );
+    const file = parseFilePayload(
+        await responseJson(response, failureMessage, createFilesApiError),
         failureMessage
     );
-    const file = parseFilePayload(await responseJson(response, failureMessage), failureMessage);
     if (file.fileId !== fileId || file.name !== name.trim()) {
         throw new FilesApiError('generic', failureMessage);
     }

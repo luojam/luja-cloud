@@ -1,7 +1,6 @@
 import { useAuth, useClerk } from '@clerk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
-
 import { DashboardShell } from '@/components/dashboard/dashboard-shell';
 import type { PreparedDownload } from '@/components/dashboard/download-files-dialog';
 import {
@@ -29,6 +28,7 @@ import {
     renameFile,
 } from '@/lib/files-api';
 import type { FileRecord } from '@/lib/files';
+import { createFileShare, revokeFileShare } from '@/lib/shares-api';
 import { UploadProvider, type UploadBatchResult } from '@/providers/upload-provider';
 
 export const Route = createFileRoute('/_authenticated/dashboard')({
@@ -104,7 +104,48 @@ function DashboardPage() {
         await queryClient.cancelQueries({ queryKey: filesQueryKey });
         queryClient.setQueryData<FileRecord[]>(filesQueryKey, (currentFiles) =>
             currentFiles?.map((currentFile) =>
-                currentFile.fileId === renamedFile.fileId ? renamedFile : currentFile
+                currentFile.fileId === renamedFile.fileId
+                    ? { ...renamedFile, isShared: currentFile.isShared }
+                    : currentFile
+            )
+        );
+    }
+
+    async function createShare(file: FileRecord): Promise<string> {
+        const controller = new AbortController();
+        let sharePath: string;
+        try {
+            sharePath = await createFileShare(getToken, file.fileId, controller.signal);
+        } catch (error) {
+            void queryClient.invalidateQueries({ queryKey: filesQueryKey });
+            throw error;
+        }
+
+        // Never delay or discard the only copy of the raw share token for cache maintenance.
+        try {
+            void queryClient.cancelQueries({ queryKey: filesQueryKey });
+            queryClient.setQueryData<FileRecord[]>(filesQueryKey, (currentFiles) =>
+                currentFiles?.map((currentFile) =>
+                    currentFile.fileId === file.fileId
+                        ? { ...currentFile, isShared: true }
+                        : currentFile
+                )
+            );
+        } catch {
+            void queryClient.invalidateQueries({ queryKey: filesQueryKey });
+        }
+        return sharePath;
+    }
+
+    async function revokeShare(file: FileRecord): Promise<void> {
+        const controller = new AbortController();
+        await revokeFileShare(getToken, file.fileId, controller.signal);
+        await queryClient.cancelQueries({ queryKey: filesQueryKey });
+        queryClient.setQueryData<FileRecord[]>(filesQueryKey, (currentFiles) =>
+            currentFiles?.map((currentFile) =>
+                currentFile.fileId === file.fileId
+                    ? { ...currentFile, isShared: false }
+                    : currentFile
             )
         );
     }
@@ -172,6 +213,8 @@ function DashboardPage() {
                         onDelete={deleteFiles}
                         onDownload={downloadFiles}
                         onRename={renameSelectedFile}
+                        onCreateShare={createShare}
+                        onRevokeShare={revokeShare}
                     />
                 )}
             </DashboardShell>

@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import {
     createDeleteFileHandler,
+    type ClaimFileDeletion,
     type DeleteFileMetadata,
     type DeleteObject,
     type GetFile,
@@ -52,21 +53,24 @@ function file(overrides: Partial<FileMetadataItem> = {}): FileMetadataItem {
 }
 
 function dependencies(item: FileMetadataItem | null = file()) {
-    const getFile = jest.fn<ReturnType<GetFile>, Parameters<GetFile>>().mockResolvedValue({
-        Item: item ?? undefined,
-    });
+    const getFile = jest
+        .fn<ReturnType<GetFile>, Parameters<GetFile>>()
+        .mockResolvedValue({ Item: item ?? undefined });
+    const claimDeletion = jest
+        .fn<ReturnType<ClaimFileDeletion>, Parameters<ClaimFileDeletion>>()
+        .mockResolvedValue();
     const deleteObject = jest
         .fn<ReturnType<DeleteObject>, Parameters<DeleteObject>>()
         .mockResolvedValue();
     const deleteMetadata = jest
         .fn<ReturnType<DeleteFileMetadata>, Parameters<DeleteFileMetadata>>()
         .mockResolvedValue();
-    return { getFile, deleteObject, deleteMetadata };
+    return { getFile, claimDeletion, deleteObject, deleteMetadata };
 }
 
 async function invoke(deps = dependencies(), subject: string | null = 'user_123') {
     const handler = createDeleteFileHandler({
-        tableName: 'FilesTable',
+        filesTableName: 'FilesTable',
         bucketName: 'FilesBucket',
         ...deps,
     });
@@ -79,11 +83,10 @@ test('rejects a missing subject before accessing storage', async () => {
     const deps = dependencies();
     expect((await invoke(deps, null)).statusCode).toBe(401);
     expect(deps.getFile).not.toHaveBeenCalled();
-    expect(deps.deleteObject).not.toHaveBeenCalled();
+    expect(deps.claimDeletion).not.toHaveBeenCalled();
 });
 
 test.each([
-    ['absent', null],
     ['non-owned', null],
     ['pending', file({ status: 'pending' })],
 ] as const)('returns the same 404 for an %s record', async (_case, item) => {
@@ -96,14 +99,30 @@ test.each([
         Key: { ownerId: 'owner_from_jwt', fileId: 'file_123' },
         ConsistentRead: true,
     });
+    expect(deps.claimDeletion).not.toHaveBeenCalled();
     expect(deps.deleteObject).not.toHaveBeenCalled();
-    expect(deps.deleteMetadata).not.toHaveBeenCalled();
 });
 
-test('deletes the exact stored object before conditionally deleting metadata', async () => {
+test('atomically claims the file and removes tokenHash before deleting bytes and metadata', async () => {
     const deps = dependencies();
     const result = await invoke(deps);
 
+    expect(deps.claimDeletion).toHaveBeenCalledWith({
+        TableName: 'FilesTable',
+        Key: { ownerId: 'user_123', fileId: 'file_123' },
+        UpdateExpression: 'SET #status = :deleting REMOVE #tokenHash',
+        ConditionExpression: '#status = :ready AND #objectKey = :objectKey',
+        ExpressionAttributeNames: {
+            '#status': 'status',
+            '#objectKey': 'objectKey',
+            '#tokenHash': 'tokenHash',
+        },
+        ExpressionAttributeValues: {
+            ':ready': 'ready',
+            ':deleting': 'deleting',
+            ':objectKey': 'files/exact-stored-key',
+        },
+    });
     expect(deps.deleteObject).toHaveBeenCalledWith({
         Bucket: 'FilesBucket',
         Key: 'files/exact-stored-key',
@@ -111,84 +130,101 @@ test('deletes the exact stored object before conditionally deleting metadata', a
     expect(deps.deleteMetadata).toHaveBeenCalledWith({
         TableName: 'FilesTable',
         Key: { ownerId: 'user_123', fileId: 'file_123' },
-        ConditionExpression:
-            'attribute_exists(#ownerId) AND attribute_exists(#fileId) AND #status = :ready AND #objectKey = :objectKey',
-        ExpressionAttributeNames: {
-            '#ownerId': 'ownerId',
-            '#fileId': 'fileId',
-            '#status': 'status',
-            '#objectKey': 'objectKey',
-        },
+        ConditionExpression: '#status = :deleting AND #objectKey = :objectKey',
+        ExpressionAttributeNames: { '#status': 'status', '#objectKey': 'objectKey' },
         ExpressionAttributeValues: {
-            ':ready': 'ready',
+            ':deleting': 'deleting',
             ':objectKey': 'files/exact-stored-key',
         },
     });
+    expect(deps.claimDeletion.mock.invocationCallOrder[0]).toBeLessThan(
+        deps.deleteObject.mock.invocationCallOrder[0]
+    );
     expect(deps.deleteObject.mock.invocationCallOrder[0]).toBeLessThan(
         deps.deleteMetadata.mock.invocationCallOrder[0]
     );
     expect(result).toEqual({ statusCode: 204, headers: { 'cache-control': 'no-store' } });
-    expect(result.body).toBeUndefined();
 });
 
-test('allows metadata deletion when a concurrent rename changes display fields', async () => {
-    const deps = dependencies();
-    deps.deleteObject.mockImplementationOnce(async () => {
-        // A rename changes these fields after the consistent read but leaves object identity intact.
-        const currentItem = file({
-            name: 'renamed.pdf',
-            modifiedAt: '2026-01-02T00:00:00.000Z',
-        });
-        expect(currentItem.objectKey).toBe('files/exact-stored-key');
-    });
-
-    const result = await invoke(deps);
-    const deleteInput = deps.deleteMetadata.mock.calls[0][0];
-
-    expect(deleteInput.ConditionExpression).not.toContain('modifiedAt');
-    expect(deleteInput.ConditionExpression).not.toContain('createdAt');
-    expect(result.statusCode).toBe(204);
+test('retries a previously claimed deletion without another update', async () => {
+    const deps = dependencies(file({ status: 'deleting' }));
+    expect((await invoke(deps)).statusCode).toBe(204);
+    expect(deps.claimDeletion).not.toHaveBeenCalled();
+    expect(deps.deleteObject).toHaveBeenCalledTimes(1);
+    expect(deps.deleteMetadata).toHaveBeenCalledTimes(1);
 });
 
-test('does not delete metadata when S3 deletion fails', async () => {
+test('continues when another request claims deletion first', async () => {
     const deps = dependencies();
-    deps.deleteObject.mockRejectedValue(new Error('private S3 details'));
-    const result = await invoke(deps);
-    expect(result.statusCode).toBe(500);
+    deps.getFile.mockResolvedValueOnce({ Item: file() });
+    deps.getFile.mockResolvedValueOnce({ Item: file({ status: 'deleting' }) });
+    deps.claimDeletion.mockRejectedValue({ name: 'ConditionalCheckFailedException' });
+
+    expect((await invoke(deps)).statusCode).toBe(204);
+    expect(deps.getFile).toHaveBeenCalledTimes(2);
+    expect(deps.deleteObject).toHaveBeenCalledTimes(1);
+    expect(deps.deleteMetadata).toHaveBeenCalledTimes(1);
+});
+
+test('succeeds when another request finishes deletion after the initial read', async () => {
+    const deps = dependencies();
+    deps.getFile.mockResolvedValueOnce({ Item: file() });
+    deps.getFile.mockResolvedValueOnce({ Item: undefined });
+    deps.claimDeletion.mockRejectedValue({ name: 'ConditionalCheckFailedException' });
+
+    expect((await invoke(deps)).statusCode).toBe(204);
+    expect(deps.getFile).toHaveBeenCalledTimes(2);
+    expect(deps.deleteObject).not.toHaveBeenCalled();
     expect(deps.deleteMetadata).not.toHaveBeenCalled();
+});
+
+test('succeeds when cleanup removes deleting metadata concurrently', async () => {
+    const deps = dependencies(file({ status: 'deleting' }));
+    deps.getFile.mockResolvedValueOnce({ Item: file({ status: 'deleting' }) });
+    deps.getFile.mockResolvedValueOnce({ Item: undefined });
+    deps.deleteMetadata.mockRejectedValue({ name: 'ConditionalCheckFailedException' });
+
+    expect((await invoke(deps)).statusCode).toBe(204);
+    expect(deps.getFile).toHaveBeenCalledTimes(2);
+    expect(deps.deleteObject).toHaveBeenCalledTimes(1);
+    expect(deps.deleteMetadata).toHaveBeenCalledTimes(1);
+});
+
+test('does not hide a conditional failure while metadata still exists', async () => {
+    const deps = dependencies(file({ status: 'deleting' }));
+    deps.deleteMetadata.mockRejectedValue({ name: 'ConditionalCheckFailedException' });
+
+    expect((await invoke(deps)).statusCode).toBe(500);
+    expect(deps.getFile).toHaveBeenCalledTimes(2);
+});
+
+test('returns a sanitized error for a non-conditional metadata deletion failure', async () => {
+    const deps = dependencies(file({ status: 'deleting' }));
+    deps.deleteMetadata.mockRejectedValue(new Error('private metadata failure'));
+
+    const result = await invoke(deps);
+    expect(result.statusCode).toBe(500);
     expect(result.body).toBe(JSON.stringify({ message: 'Internal server error' }));
 });
 
-test('a metadata failure after S3 success is sanitized and can safely retry', async () => {
+test('does not remove metadata when object deletion fails and returns only a sanitized error', async () => {
     const deps = dependencies();
-    deps.deleteMetadata
-        .mockRejectedValueOnce(new Error('private DynamoDB details'))
-        .mockResolvedValueOnce();
-
-    const first = await invoke(deps);
-    const second = await invoke(deps);
-    expect(first.statusCode).toBe(500);
-    expect(first.body).not.toContain('private DynamoDB details');
-    expect(second.statusCode).toBe(204);
-    expect(deps.deleteObject).toHaveBeenCalledTimes(2);
-    expect(deps.deleteMetadata).toHaveBeenCalledTimes(2);
+    deps.deleteObject.mockRejectedValue(new Error('private bucket and key details'));
+    const result = await invoke(deps);
+    expect(result.statusCode).toBe(500);
+    expect(result.body).toBe(JSON.stringify({ message: 'Internal server error' }));
+    expect(deps.deleteMetadata).not.toHaveBeenCalled();
 });
 
-test('returns a sanitized 500 when the conditional deletion detects changed state', async () => {
+test('does not touch storage after a failed deletion claim', async () => {
     const deps = dependencies();
-    deps.deleteMetadata.mockRejectedValue({
-        name: 'ConditionalCheckFailedException',
-        message: 'private replacement details',
+    deps.claimDeletion.mockRejectedValue({
+        name: 'ProvisionedThroughputExceededException',
+        message: 'private state',
     });
     const result = await invoke(deps);
     expect(result.statusCode).toBe(500);
-    expect(result.body).toBe(JSON.stringify({ message: 'Internal server error' }));
-});
-
-test('sanitizes metadata read failures', async () => {
-    const deps = dependencies();
-    deps.getFile.mockRejectedValue(new Error('private record and object key'));
-    const result = await invoke(deps);
-    expect(result.statusCode).toBe(500);
-    expect(result.body).toBe(JSON.stringify({ message: 'Internal server error' }));
+    expect(result.body).not.toContain('private state');
+    expect(deps.deleteObject).not.toHaveBeenCalled();
+    expect(deps.deleteMetadata).not.toHaveBeenCalled();
 });

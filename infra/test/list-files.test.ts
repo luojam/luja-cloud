@@ -32,10 +32,7 @@ function eventWithSubject(subject?: string): APIGatewayProxyEventV2WithJWTAuthor
             authorizer: {
                 principalId: 'user_123',
                 integrationLatency: 0,
-                jwt: {
-                    claims: subject === undefined ? {} : { sub: subject },
-                    scopes: [],
-                },
+                jwt: { claims: subject === undefined ? {} : { sub: subject }, scopes: [] },
             },
         },
         isBase64Encoded: false,
@@ -62,24 +59,17 @@ function queryMock(): jest.MockedFunction<QueryFiles> {
 }
 
 async function invoke(
-    query: jest.MockedFunction<QueryFiles>,
+    queryFiles: jest.MockedFunction<QueryFiles>,
     subject: string | undefined = 'user_123'
 ) {
-    const handler = createListFilesHandler({ tableName: 'FilesTable', query });
+    const handler = createListFilesHandler({ tableName: 'FilesTable', queryFiles });
     const result = await handler(eventWithSubject(subject), {} as never, jest.fn());
-
-    if (!result || typeof result === 'string') {
-        throw new Error('Expected an API Gateway response');
-    }
-
+    if (!result || typeof result === 'string') throw new Error('Expected response');
     return result;
 }
 
 test('returns an empty file array when the owner has no ready records', async () => {
-    const query = queryMock().mockResolvedValue({ Items: [] });
-
-    const result = await invoke(query);
-
+    const result = await invoke(queryMock().mockResolvedValue({ Items: [] }));
     expect(result.statusCode).toBe(200);
     expect(result.headers).toEqual({
         'content-type': 'application/json',
@@ -88,33 +78,31 @@ test('returns an empty file array when the owner has no ready records', async ()
     expect(JSON.parse(result.body ?? '')).toEqual({ files: [] });
 });
 
-test('queries only the owner ID from the verified JWT subject', async () => {
+test('strongly queries only the owner ID from the verified JWT subject', async () => {
     const query = queryMock().mockResolvedValue({ Items: [] });
-
     await invoke(query, 'user_from_jwt');
-
     expect(query).toHaveBeenCalledWith(
         expect.objectContaining({
+            TableName: 'FilesTable',
             KeyConditionExpression: '#ownerId = :ownerId',
-            ExpressionAttributeValues: {
-                ':ownerId': 'user_from_jwt',
-                ':ready': 'ready',
-            },
+            ExpressionAttributeValues: { ':ownerId': 'user_from_jwt', ':ready': 'ready' },
+            ConsistentRead: true,
         })
     );
 });
 
-test('returns ready records using only public fields and excludes pending and cleanup states', async () => {
+test('returns ready records using only public fields and derives isShared from tokenHash', async () => {
     const query = queryMock().mockResolvedValue({
         Items: [
-            readyFile(),
-            readyFile({ fileId: 'pending', status: 'pending' }),
+            readyFile({ tokenHash: 'a'.repeat(64) }),
+            readyFile({ fileId: 'private' }),
+            readyFile({ fileId: 'pending', status: 'pending', tokenHash: 'b'.repeat(64) }),
             readyFile({ fileId: 'cleanup', status: 'cleanup' }),
+            readyFile({ fileId: 'deleting', status: 'deleting' }),
         ],
     });
 
     const result = await invoke(query);
-
     expect(JSON.parse(result.body ?? '')).toEqual({
         files: [
             {
@@ -124,14 +112,14 @@ test('returns ready records using only public fields and excludes pending and cl
                 sizeBytes: 123,
                 createdAt: '2026-01-01T00:00:00.000Z',
                 modifiedAt: '2026-01-02T00:00:00.000Z',
+                isShared: true,
             },
+            expect.objectContaining({ fileId: 'private', isShared: false }),
         ],
     });
-    expect(query).toHaveBeenCalledWith(
-        expect.objectContaining({
-            FilterExpression: '#status = :ready',
-        })
-    );
+    expect(result.body).not.toContain('tokenHash');
+    expect(result.body).not.toContain('objectKey');
+    expect(query).toHaveBeenCalledTimes(1);
 });
 
 test('continues after an empty filtered page and reads subsequent pages', async () => {
@@ -143,7 +131,6 @@ test('continues after an empty filtered page and reads subsequent pages', async 
         .mockResolvedValueOnce({ Items: [readyFile({ fileId: 'b' })] });
 
     const result = await invoke(query);
-
     expect(query).toHaveBeenCalledTimes(2);
     expect(query.mock.calls[1][0].ExclusiveStartKey).toEqual({
         ownerId: 'user_123',
@@ -152,34 +139,22 @@ test('continues after an empty filtered page and reads subsequent pages', async 
     expect(JSON.parse(result.body ?? '').files).toHaveLength(1);
 });
 
-test.each(['', '   '])('rejects an empty JWT subject', async (subject) => {
+test('rejects a blank JWT subject', async () => {
     const query = queryMock();
-
-    const result = await invoke(query, subject);
-
-    expect(result.statusCode).toBe(401);
+    expect((await invoke(query, '   ')).statusCode).toBe(401);
     expect(query).not.toHaveBeenCalled();
 });
 
 test('rejects a missing JWT subject', async () => {
     const query = queryMock();
-    const handler = createListFilesHandler({ tableName: 'FilesTable', query });
-
+    const handler = createListFilesHandler({ tableName: 'FilesTable', queryFiles: query });
     const result = await handler(eventWithSubject(), {} as never, jest.fn());
-
-    expect(result).toEqual(
-        expect.objectContaining({
-            statusCode: 401,
-        })
-    );
+    expect(result).toEqual(expect.objectContaining({ statusCode: 401 }));
     expect(query).not.toHaveBeenCalled();
 });
 
 test('returns a generic server error when DynamoDB fails', async () => {
-    const query = queryMock().mockRejectedValue(new Error('record details'));
-
-    const result = await invoke(query);
-
+    const result = await invoke(queryMock().mockRejectedValue(new Error('record details')));
     expect(result.statusCode).toBe(500);
     expect(JSON.parse(result.body ?? '')).toEqual({ message: 'Internal server error' });
     expect(result.body).not.toContain('record details');

@@ -56,17 +56,18 @@ test('defines the abandonment window once as 24 hours', () => {
     expect(ABANDONED_UPLOAD_AGE_MS).toBe(24 * 60 * 60 * 1_000);
 });
 
-test('scans only stale pending and retryable cleanup records, leaving fresh pending and ready records untouched', async () => {
+test('scans stale pending and retryable cleanup/deleting records, leaving fresh pending and ready records untouched', async () => {
     const deps = dependencies([]);
     await invoke(deps);
 
     expect(deps.scanFiles).toHaveBeenCalledWith(
         expect.objectContaining({
             FilterExpression:
-                '#status = :cleanup OR (#status = :pending AND #createdAt <= :cutoff)',
+                '#status = :cleanup OR #status = :deleting OR (#status = :pending AND #createdAt <= :cutoff)',
             ExpressionAttributeValues: {
                 ':pending': 'pending',
                 ':cleanup': 'cleanup',
+                ':deleting': 'deleting',
                 ':cutoff': new Date(NOW.getTime() - ABANDONED_UPLOAD_AGE_MS).toISOString(),
             },
         })
@@ -92,7 +93,11 @@ test('claims a stale pending record before deleting its object and metadata', as
     });
     expect(deps.deleteMetadata).toHaveBeenCalledWith(
         expect.objectContaining({
-            ConditionExpression: '#status = :cleanup AND #objectKey = :objectKey',
+            ConditionExpression: '#status = :expectedStatus AND #objectKey = :objectKey',
+            ExpressionAttributeValues: {
+                ':expectedStatus': 'cleanup',
+                ':objectKey': 'files/object-secret',
+            },
         })
     );
     expect(deps.claimFile.mock.invocationCallOrder[0]).toBeLessThan(
@@ -108,12 +113,22 @@ test('claims a stale pending record before deleting its object and metadata', as
     });
 });
 
-test('treats an absent S3 object as an idempotent successful delete', async () => {
-    const deps = dependencies([file({ status: 'cleanup' })]);
-    await expect(invoke(deps)).resolves.toEqual(expect.objectContaining({ deleted: 1 }));
-    expect(deps.claimFile).not.toHaveBeenCalled();
-    expect(deps.deleteMetadata).toHaveBeenCalledTimes(1);
-});
+test.each(['cleanup', 'deleting'] as const)(
+    'retries %s records and treats an absent S3 object as a successful delete',
+    async (status) => {
+        const deps = dependencies([file({ status })]);
+        await expect(invoke(deps)).resolves.toEqual(expect.objectContaining({ deleted: 1 }));
+        expect(deps.claimFile).not.toHaveBeenCalled();
+        expect(deps.deleteMetadata).toHaveBeenCalledWith(
+            expect.objectContaining({
+                ExpressionAttributeValues: {
+                    ':expectedStatus': status,
+                    ':objectKey': 'files/object-secret',
+                },
+            })
+        );
+    }
+);
 
 test('paginates through every scan page', async () => {
     const deps = dependencies([]);

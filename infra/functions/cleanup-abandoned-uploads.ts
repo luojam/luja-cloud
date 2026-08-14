@@ -54,7 +54,7 @@ function isCandidate(item: unknown): item is FileMetadataItem {
     if (typeof item !== 'object' || item === null) return false;
     const value = item as Partial<FileMetadataItem>;
     return (
-        (value.status === 'pending' || value.status === 'cleanup') &&
+        (value.status === 'pending' || value.status === 'cleanup' || value.status === 'deleting') &&
         typeof value.ownerId === 'string' &&
         typeof value.fileId === 'string' &&
         typeof value.objectKey === 'string' &&
@@ -91,7 +91,7 @@ export function createCleanupAbandonedUploadsHandler({
                 const page = await scanFiles({
                     TableName: tableName,
                     FilterExpression:
-                        '#status = :cleanup OR (#status = :pending AND #createdAt <= :cutoff)',
+                        '#status = :cleanup OR #status = :deleting OR (#status = :pending AND #createdAt <= :cutoff)',
                     ProjectionExpression: '#ownerId, #fileId, #objectKey, #status, #createdAt',
                     ExpressionAttributeNames: {
                         '#ownerId': 'ownerId',
@@ -103,6 +103,7 @@ export function createCleanupAbandonedUploadsHandler({
                     ExpressionAttributeValues: {
                         ':pending': 'pending',
                         ':cleanup': 'cleanup',
+                        ':deleting': 'deleting',
                         ':cutoff': cutoff,
                     },
                     ExclusiveStartKey: exclusiveStartKey,
@@ -119,6 +120,8 @@ export function createCleanupAbandonedUploadsHandler({
                     }
                     counts.candidates += 1;
                     const key = { ownerId: candidate.ownerId, fileId: candidate.fileId };
+                    const cleanupStatus =
+                        candidate.status === 'pending' ? 'cleanup' : candidate.status;
 
                     if (candidate.status === 'pending') {
                         try {
@@ -169,13 +172,14 @@ export function createCleanupAbandonedUploadsHandler({
                         await deleteMetadata({
                             TableName: tableName,
                             Key: key,
-                            ConditionExpression: '#status = :cleanup AND #objectKey = :objectKey',
+                            ConditionExpression:
+                                '#status = :expectedStatus AND #objectKey = :objectKey',
                             ExpressionAttributeNames: {
                                 '#status': 'status',
                                 '#objectKey': 'objectKey',
                             },
                             ExpressionAttributeValues: {
-                                ':cleanup': 'cleanup',
+                                ':expectedStatus': cleanupStatus,
                                 ':objectKey': candidate.objectKey,
                             },
                         });

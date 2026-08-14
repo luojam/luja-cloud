@@ -3,9 +3,9 @@ import {
     Download04Icon,
     Edit02Icon,
     MoreVerticalIcon,
+    Share08Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-
 import { Button } from '@/components/ui/button';
 import {
     ContextMenuContent,
@@ -29,6 +29,7 @@ type FileActionsDropdownProps = {
     onDownload: () => void;
     onOpen: () => void;
     onRename: () => void;
+    onShare: () => void;
 };
 
 export function FileActionsDropdown({
@@ -38,6 +39,7 @@ export function FileActionsDropdown({
     onDownload,
     onOpen,
     onRename,
+    onShare,
 }: FileActionsDropdownProps) {
     return (
         <DropdownMenu
@@ -62,6 +64,10 @@ export function FileActionsDropdown({
                         <HugeiconsIcon icon={Edit02Icon} strokeWidth={1.8} />
                         Rename
                     </DropdownMenuItem>
+                    <DropdownMenuItem onClick={onShare}>
+                        <HugeiconsIcon icon={Share08Icon} strokeWidth={1.8} />
+                        Share
+                    </DropdownMenuItem>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
@@ -80,6 +86,7 @@ type FileActionsContextMenuProps = {
     onDelete: () => void;
     onDownload: () => void;
     onRename: () => void;
+    onShare: () => void;
 };
 
 export function FileActionsContextMenu({
@@ -87,6 +94,7 @@ export function FileActionsContextMenu({
     onDelete,
     onDownload,
     onRename,
+    onShare,
 }: FileActionsContextMenuProps) {
     return (
         <ContextMenuContent className='w-40'>
@@ -98,6 +106,10 @@ export function FileActionsContextMenu({
                 <ContextMenuItem onClick={onRename}>
                     <HugeiconsIcon icon={Edit02Icon} strokeWidth={1.8} />
                     Rename
+                </ContextMenuItem>
+                <ContextMenuItem onClick={onShare}>
+                    <HugeiconsIcon icon={Share08Icon} strokeWidth={1.8} />
+                    Share
                 </ContextMenuItem>
             </ContextMenuGroup>
             <ContextMenuSeparator />

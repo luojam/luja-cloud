@@ -5,6 +5,7 @@ export type FileRecord = {
     createdAt: string;
     modifiedAt: string;
     sizeBytes: number;
+    isShared: boolean;
 };
 
 export type FileNameParts = {

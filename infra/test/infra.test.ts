@@ -1,15 +1,20 @@
 import * as cdk from 'aws-cdk-lib/core';
-import { Capture, Match, Template } from 'aws-cdk-lib/assertions';
+import { Match, Template } from 'aws-cdk-lib/assertions';
 import { LujaCloudStack } from '../lib/luja-cloud-stack';
 
-function stackTemplate(): Template {
-    const app = new cdk.App();
-    const stack = new LujaCloudStack(app, 'TestStack', {
-        clerkIssuer: 'https://clerk.example.test',
-        env: { account: '111111111111', region: 'eu-west-1' },
-    });
+let defaultTemplate: Template | undefined;
 
-    return Template.fromStack(stack);
+function stackTemplate(): Template {
+    if (!defaultTemplate) {
+        const app = new cdk.App();
+        const stack = new LujaCloudStack(app, 'TestStack', {
+            clerkIssuer: 'https://clerk.example.test',
+            env: { account: '111111111111', region: 'eu-west-1' },
+        });
+        defaultTemplate = Template.fromStack(stack);
+    }
+
+    return defaultTemplate;
 }
 
 test('configures a custom CloudFront alias and certificate when supplied', () => {
@@ -50,9 +55,10 @@ test('rejects incomplete custom-domain configuration', () => {
     ).toThrow('customDomain and certificateArn must be provided together.');
 });
 
-test('provisions the destructively removed on-demand file metadata table', () => {
+test('provisions the destructible on-demand file table with its sparse share index', () => {
     const template = stackTemplate();
 
+    template.resourceCountIs('AWS::DynamoDB::Table', 1);
     template.hasResource('AWS::DynamoDB::Table', {
         DeletionPolicy: 'Delete',
         UpdateReplacePolicy: 'Delete',
@@ -65,28 +71,32 @@ test('provisions the destructively removed on-demand file metadata table', () =>
             AttributeDefinitions: Match.arrayWith([
                 { AttributeName: 'ownerId', AttributeType: 'S' },
                 { AttributeName: 'fileId', AttributeType: 'S' },
+                { AttributeName: 'tokenHash', AttributeType: 'S' },
             ]),
+            GlobalSecondaryIndexes: [
+                {
+                    IndexName: 'TokenHashIndex',
+                    KeySchema: [{ AttributeName: 'tokenHash', KeyType: 'HASH' }],
+                    Projection: { ProjectionType: 'KEYS_ONLY' },
+                },
+            ],
         },
     });
 });
 
-test('configures the list Lambda with the table name and one-week destructible logs', () => {
+test('configures the list Lambda with its table, query-only access, and destructible logs', () => {
     const template = stackTemplate();
     const tableId = Object.keys(template.findResources('AWS::DynamoDB::Table'))[0];
-    const logGroupId = new Capture();
-
-    template.hasResourceProperties('AWS::Lambda::Function', {
-        Environment: {
-            Variables: {
-                FILES_TABLE_NAME: { Ref: tableId },
-            },
-        },
-        LoggingConfig: {
-            LogGroup: { Ref: logGroupId },
-        },
+    const listFunction = Object.entries(template.findResources('AWS::Lambda::Function')).find(
+        ([logicalId]) => logicalId.includes('ListFilesFunction')
+    )?.[1];
+    expect(listFunction).toBeDefined();
+    expect(listFunction?.Properties.Environment.Variables).toEqual({
+        FILES_TABLE_NAME: { Ref: tableId },
     });
 
-    const listFilesLogGroup = template.findResources('AWS::Logs::LogGroup')[logGroupId.asString()];
+    const logGroupId = listFunction?.Properties.LoggingConfig.LogGroup.Ref as string;
+    const listFilesLogGroup = template.findResources('AWS::Logs::LogGroup')[logGroupId];
     expect(listFilesLogGroup).toEqual(
         expect.objectContaining({
             DeletionPolicy: 'Delete',
@@ -94,27 +104,17 @@ test('configures the list Lambda with the table name and one-week destructible l
             Properties: { RetentionInDays: 7 },
         })
     );
-});
 
-test('grants DynamoDB read access to the list Lambda without write actions', () => {
-    const template = stackTemplate();
-    const policies = template.findResources('AWS::IAM::Policy');
-    const statements = Object.values(policies).flatMap((policy) =>
-        policy.Properties.PolicyDocument.Statement.flatMap(
-            (statement: { Action?: string | string[] }) =>
-                Array.isArray(statement.Action) ? statement.Action : [statement.Action]
-        )
-    );
-
-    expect(statements).toContain('dynamodb:Query');
-    expect(statements).not.toEqual(
-        expect.arrayContaining([
-            'dynamodb:PutItem',
-            'dynamodb:UpdateItem',
-            'dynamodb:DeleteItem',
-            'dynamodb:BatchWriteItem',
-        ])
-    );
+    const statements = Object.entries(template.findResources('AWS::IAM::Policy'))
+        .filter(([logicalId]) => logicalId.includes('ListFilesFunction'))
+        .flatMap(([, policy]) => policy.Properties.PolicyDocument.Statement);
+    expect(statements).toEqual([
+        expect.objectContaining({
+            Effect: 'Allow',
+            Action: 'dynamodb:Query',
+            Resource: { 'Fn::GetAtt': [tableId, 'Arn'] },
+        }),
+    ]);
 });
 
 test('provisions a private encrypted destructively removed user-file bucket with PUT-only development CORS', () => {
@@ -195,23 +195,13 @@ test('grants upload handlers only their required file table and bucket actions',
     );
 });
 
-test('registers authenticated rename PATCH route and forwards it through CloudFront', () => {
+test('registers the authenticated rename PATCH route', () => {
     const template = stackTemplate();
 
     template.hasResourceProperties('AWS::ApiGatewayV2::Route', {
         RouteKey: 'PATCH /api/files/{id}',
         AuthorizationType: 'JWT',
         AuthorizerId: Match.anyValue(),
-    });
-    template.hasResourceProperties('AWS::CloudFront::Distribution', {
-        DistributionConfig: {
-            CacheBehaviors: Match.arrayWith([
-                Match.objectLike({
-                    PathPattern: '/api/*',
-                    AllowedMethods: ['GET', 'HEAD', 'OPTIONS', 'PUT', 'PATCH', 'POST', 'DELETE'],
-                }),
-            ]),
-        },
     });
 });
 
@@ -332,23 +322,13 @@ test('registers GET /api/files with the Clerk JWT authorizer', () => {
     });
 });
 
-test('registers authenticated file DELETE route and forwards it through CloudFront', () => {
+test('registers the authenticated file DELETE route', () => {
     const template = stackTemplate();
 
     template.hasResourceProperties('AWS::ApiGatewayV2::Route', {
         RouteKey: 'DELETE /api/files/{id}',
         AuthorizationType: 'JWT',
         AuthorizerId: Match.anyValue(),
-    });
-    template.hasResourceProperties('AWS::CloudFront::Distribution', {
-        DistributionConfig: {
-            CacheBehaviors: Match.arrayWith([
-                Match.objectLike({
-                    PathPattern: '/api/*',
-                    AllowedMethods: ['GET', 'HEAD', 'OPTIONS', 'PUT', 'PATCH', 'POST', 'DELETE'],
-                }),
-            ]),
-        },
     });
 });
 
@@ -377,7 +357,7 @@ test('configures delete with destructible logs and least-privilege metadata and 
         Array.isArray(statement.Action) ? statement.Action : [statement.Action]
     );
     expect(actions.sort()).toEqual(
-        ['dynamodb:DeleteItem', 'dynamodb:GetItem', 's3:DeleteObject'].sort()
+        ['dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:UpdateItem', 's3:DeleteObject'].sort()
     );
     const deleteObject = policies.find(
         (statement: { Action: string | string[] }) => statement.Action === 's3:DeleteObject'
@@ -388,7 +368,8 @@ test('configures delete with destructible logs and least-privilege metadata and 
             'dynamodb:Query',
             'dynamodb:Scan',
             'dynamodb:PutItem',
-            'dynamodb:UpdateItem',
+            'dynamodb:ConditionCheckItem',
+            'dynamodb:TransactWriteItems',
             's3:GetObject',
             's3:PutObject',
             's3:ListBucket',
@@ -451,4 +432,100 @@ test('configures cleanup timeout, destructible logs, and least privilege', () =>
         (statement: { Action: string | string[] }) => statement.Action === 's3:DeleteObject'
     );
     expect(JSON.stringify(objectDelete?.Resource)).toContain('/files/*');
+});
+
+test('registers and throttles unauthenticated share routes while authorizing owner routes', () => {
+    const template = stackTemplate();
+    for (const routeKey of ['POST /api/files/{id}/share', 'DELETE /api/files/{id}/share']) {
+        template.hasResourceProperties('AWS::ApiGatewayV2::Route', {
+            RouteKey: routeKey,
+            AuthorizationType: 'JWT',
+            AuthorizerId: Match.anyValue(),
+        });
+    }
+    for (const routeKey of ['GET /api/shares/{token}', 'POST /api/shares/{token}/download']) {
+        template.hasResourceProperties('AWS::ApiGatewayV2::Route', {
+            RouteKey: routeKey,
+            AuthorizationType: 'NONE',
+        });
+    }
+    template.hasResourceProperties('AWS::ApiGatewayV2::Stage', {
+        RouteSettings: {
+            'GET /api/shares/{token}': {
+                ThrottlingRateLimit: 10,
+                ThrottlingBurstLimit: 20,
+            },
+            'POST /api/shares/{token}/download': {
+                ThrottlingRateLimit: 10,
+                ThrottlingBurstLimit: 20,
+            },
+        },
+    });
+});
+
+test('grants sharing Lambdas only their required DynamoDB and S3 operations', () => {
+    const template = stackTemplate();
+    const policies = template.findResources('AWS::IAM::Policy');
+    const actionsFor = (name: string) =>
+        Object.entries(policies)
+            .filter(([logicalId]) => logicalId.includes(name))
+            .flatMap(([, policy]) => policy.Properties.PolicyDocument.Statement)
+            .flatMap((statement: { Action: string | string[] }) =>
+                Array.isArray(statement.Action) ? statement.Action : [statement.Action]
+            );
+
+    expect(actionsFor('EnableFileShareFunction').sort()).toEqual(
+        ['dynamodb:GetItem', 'dynamodb:UpdateItem'].sort()
+    );
+    expect(actionsFor('RevokeFileShareFunction')).toEqual(['dynamodb:UpdateItem']);
+    expect(actionsFor('ResolveFileShareFunction').sort()).toEqual(
+        ['dynamodb:GetItem', 'dynamodb:Query', 's3:GetObject'].sort()
+    );
+    expect(actionsFor('EnableFileShareFunction').some((action) => action.startsWith('s3:'))).toBe(
+        false
+    );
+    expect(actionsFor('RevokeFileShareFunction').some((action) => action.startsWith('s3:'))).toBe(
+        false
+    );
+    expect(actionsFor('ResolveFileShareFunction')).not.toEqual(
+        expect.arrayContaining([
+            'dynamodb:PutItem',
+            'dynamodb:UpdateItem',
+            'dynamodb:DeleteItem',
+            's3:PutObject',
+            's3:DeleteObject',
+        ])
+    );
+});
+
+test('routes share resolution through the non-caching API behavior while SPA share paths keep the rewrite', () => {
+    const template = stackTemplate();
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+        DistributionConfig: {
+            CacheBehaviors: Match.arrayWith([
+                Match.objectLike({
+                    PathPattern: '/api/*',
+                    CachePolicyId: '4135ea2d-6df8-44a3-9df3-4b5a84be39ad',
+                    AllowedMethods: ['GET', 'HEAD', 'OPTIONS', 'PUT', 'PATCH', 'POST', 'DELETE'],
+                }),
+            ]),
+            DefaultCacheBehavior: Match.objectLike({
+                FunctionAssociations: Match.arrayWith([
+                    Match.objectLike({ EventType: 'viewer-request' }),
+                ]),
+            }),
+        },
+    });
+});
+
+test('keeps API access logs token-safe by logging route templates rather than request paths', () => {
+    const template = stackTemplate();
+    const stages = template.findResources('AWS::ApiGatewayV2::Stage');
+    const stage = Object.values(stages)[0];
+    const format = stage.Properties.AccessLogSettings.Format as string;
+    expect(format).toContain('$context.routeKey');
+    expect(format).not.toContain('$context.path');
+    expect(format).not.toContain('$context.httpMethod');
+    expect(format).not.toContain('$context.identity');
+    expect(format).not.toContain('$context.requestOverride');
 });

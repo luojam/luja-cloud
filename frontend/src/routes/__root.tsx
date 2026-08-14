@@ -1,5 +1,5 @@
 import type { useAuth } from '@clerk/react';
-import { createRootRouteWithContext, Outlet } from '@tanstack/react-router';
+import { createRootRouteWithContext, Outlet, useRouterState } from '@tanstack/react-router';
 import { AuthLoadingScreen } from '@/components/auth/auth-loading-screen';
 
 export interface RouterContext {
@@ -12,9 +12,12 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 function RootLayout() {
     const { auth } = Route.useRouteContext();
+    const isPublicShareRoute = useRouterState({
+        select: (state) => state.matches.some((match) => match.routeId === '/share/$token'),
+    });
 
-    // Keep child routes hidden until Clerk restores the session.
-    if (!auth.isLoaded) return <AuthLoadingScreen />;
+    // Public share links do not depend on Clerk session restoration.
+    if (!isPublicShareRoute && !auth.isLoaded) return <AuthLoadingScreen />;
 
     return <Outlet />;
 }

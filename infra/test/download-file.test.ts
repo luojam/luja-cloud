@@ -1,10 +1,6 @@
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
-import {
-    attachmentDisposition,
-    createDownloadFileHandler,
-    type GetFile,
-    type PresignDownload,
-} from '../functions/download-file';
+import { attachmentDisposition, type PresignDownload } from '../functions/download-helpers';
+import { createDownloadFileHandler, type GetFile } from '../functions/download-file';
 import type { FileMetadataItem } from '../functions/list-files';
 
 function event(subject: string | null = 'user_123'): APIGatewayProxyEventV2WithJWTAuthorizer {
@@ -79,7 +75,6 @@ test('rejects a missing subject before accessing metadata', async () => {
 });
 
 test.each([
-    ['absent', null],
     ['non-owned', null],
     ['pending', file({ status: 'pending' })],
 ] as const)('returns the same 404 for an %s record', async (_case, item) => {

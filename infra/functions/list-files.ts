@@ -14,18 +14,23 @@ export interface FileMetadataItem {
     mimeType: string;
     sizeBytes: number;
     objectKey: string;
-    status: 'pending' | 'ready' | 'cleanup';
+    status: 'pending' | 'ready' | 'cleanup' | 'deleting';
     createdAt: string;
     modifiedAt: string;
+    tokenHash?: string;
 }
 
-export interface PublicFileRecord {
+export interface BasePublicFileRecord {
     fileId: string;
     name: string;
     mimeType: string;
     sizeBytes: number;
     createdAt: string;
     modifiedAt: string;
+}
+
+export interface PublicFileRecord extends BasePublicFileRecord {
+    isShared: boolean;
 }
 
 export interface ListFilesResponse {
@@ -38,7 +43,7 @@ export type QueryFiles = (
 
 interface ListFilesHandlerDependencies {
     tableName: string;
-    query: QueryFiles;
+    queryFiles: QueryFiles;
 }
 
 const responseHeaders = {
@@ -54,12 +59,13 @@ function publicFile(item: FileMetadataItem): PublicFileRecord {
         sizeBytes: item.sizeBytes,
         createdAt: item.createdAt,
         modifiedAt: item.modifiedAt,
+        isShared: typeof item.tokenHash === 'string',
     };
 }
 
 export function createListFilesHandler({
     tableName,
-    query,
+    queryFiles,
 }: ListFilesHandlerDependencies): APIGatewayProxyHandlerV2WithJWTAuthorizer {
     return async (event) => {
         const subject = event.requestContext.authorizer.jwt.claims.sub;
@@ -85,7 +91,7 @@ export function createListFilesHandler({
             let exclusiveStartKey: Record<string, unknown> | undefined;
 
             do {
-                const result = await query({
+                const result = await queryFiles({
                     TableName: tableName,
                     KeyConditionExpression: '#ownerId = :ownerId',
                     FilterExpression: '#status = :ready',
@@ -97,14 +103,13 @@ export function createListFilesHandler({
                         ':ownerId': subject,
                         ':ready': 'ready',
                     },
+                    ConsistentRead: true,
                     ExclusiveStartKey: exclusiveStartKey,
                 });
 
                 for (const item of result.Items ?? []) {
                     const file = item as FileMetadataItem;
-                    if (file.status === 'ready') {
-                        files.push(publicFile(file));
-                    }
+                    if (file.status === 'ready') files.push(publicFile(file));
                 }
 
                 exclusiveStartKey = result.LastEvaluatedKey;
@@ -130,5 +135,5 @@ const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 export const handler = createListFilesHandler({
     tableName: process.env.FILES_TABLE_NAME ?? '',
-    query: (input) => documentClient.send(new QueryCommand(input)),
+    queryFiles: (input) => documentClient.send(new QueryCommand(input)),
 });

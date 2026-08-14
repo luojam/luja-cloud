@@ -106,7 +106,6 @@ test('rejects a missing subject before accessing metadata', async () => {
 });
 
 test.each([
-    ['missing', null],
     ['non-owned', null],
     ['pending', file({ status: 'pending' })],
 ] as const)('returns a generic 404 for a %s record', async (_case, item) => {

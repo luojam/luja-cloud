@@ -8,7 +8,6 @@ import {
 } from '@tanstack/react-table';
 import type { RowSelectionState, SortingState } from '@tanstack/react-table';
 import { useRef, useState } from 'react';
-
 import { DeleteFilesDialog } from '@/components/dashboard/delete-files-dialog';
 import {
     DownloadFilesDialog,
@@ -17,6 +16,7 @@ import {
 import { FileActionsContextMenu } from '@/components/dashboard/file-actions';
 import { fileTableColumns } from '@/components/dashboard/file-table-columns';
 import { RenameFileDialog } from '@/components/dashboard/rename-file-dialog';
+import { ShareFileDialog } from '@/components/dashboard/share-file-dialog';
 import { useUpload } from '@/contexts/upload-context';
 import { Button } from '@/components/ui/button';
 import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu';
@@ -49,6 +49,8 @@ type FileListProps = {
     onDelete?: (files: FileRecord[]) => Promise<DeleteBatchResult>;
     onDownload?: (files: FileRecord[]) => Promise<DownloadBatchResult>;
     onRename?: (file: FileRecord, fileName: string) => Promise<void>;
+    onCreateShare: (file: FileRecord) => Promise<string>;
+    onRevokeShare: (file: FileRecord) => Promise<void>;
 };
 
 function getAriaSort(direction: false | 'asc' | 'desc') {
@@ -57,7 +59,14 @@ function getAriaSort(direction: false | 'asc' | 'desc') {
     return 'none';
 }
 
-export function FileList({ files, onDelete, onDownload, onRename }: FileListProps) {
+export function FileList({
+    files,
+    onDelete,
+    onDownload,
+    onRename,
+    onCreateShare,
+    onRevokeShare,
+}: FileListProps) {
     const { openUploadDialog } = useUpload();
     const [sorting, setSorting] = useState<SortingState>([{ id: 'modifiedAt', desc: true }]);
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -65,6 +74,7 @@ export function FileList({ files, onDelete, onDownload, onRename }: FileListProp
     const [isDeleting, setIsDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState('');
     const [fileToRename, setFileToRename] = useState<FileRecord | null>(null);
+    const [fileToShare, setFileToShare] = useState<FileRecord | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [downloadStatus, setDownloadStatus] = useState('');
     const [preparedDownloads, setPreparedDownloads] = useState<PreparedDownload[]>([]);
@@ -85,6 +95,7 @@ export function FileList({ files, onDelete, onDownload, onRename }: FileListProp
             onDelete: setFilesToDelete,
             onDownload: (selectedFiles) => void downloadFiles(selectedFiles),
             onRename: setFileToRename,
+            onShare: setFileToShare,
         },
         getCoreRowModel: getCoreRowModel(),
         getSortedRowModel: getSortedRowModel(),
@@ -92,6 +103,9 @@ export function FileList({ files, onDelete, onDownload, onRename }: FileListProp
     const fileLabel = files.length === 1 ? 'file' : 'files';
     const selectedFiles = table.getSelectedRowModel().rows.map((row) => row.original);
     const selectedCount = selectedFiles.length;
+    const currentFileToShare = fileToShare
+        ? (files.find((file) => file.fileId === fileToShare.fileId) ?? fileToShare)
+        : null;
 
     async function downloadFiles(selectedFiles: FileRecord[]) {
         if (downloadInProgress.current || !onDownload || selectedFiles.length === 0) return;
@@ -301,6 +315,7 @@ export function FileList({ files, onDelete, onDownload, onRename }: FileListProp
                                         }}
                                         onDownload={() => void downloadFiles([row.original])}
                                         onRename={() => setFileToRename(row.original)}
+                                        onShare={() => setFileToShare(row.original)}
                                     />
                                 </ContextMenu>
                             ))}
@@ -327,6 +342,17 @@ export function FileList({ files, onDelete, onDownload, onRename }: FileListProp
                 }}
                 onConfirm={() => void confirmDelete()}
             />
+            {currentFileToShare && (
+                <ShareFileDialog
+                    key={currentFileToShare.fileId}
+                    file={currentFileToShare}
+                    onOpenChange={(open) => {
+                        if (!open) setFileToShare(null);
+                    }}
+                    onCreate={onCreateShare}
+                    onRevoke={onRevokeShare}
+                />
+            )}
             {fileToRename && (
                 <RenameFileDialog
                     // Reset the draft when a different file is selected.

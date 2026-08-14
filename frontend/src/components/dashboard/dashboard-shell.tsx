@@ -2,7 +2,6 @@ import { UserButton, useUser } from '@clerk/react';
 import { FileUploadIcon, MoreVerticalIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import type { ReactNode } from 'react';
-
 import { Button } from '@/components/ui/button';
 import { useUpload } from '@/contexts/upload-context';
 import {

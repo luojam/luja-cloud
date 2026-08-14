@@ -1,6 +1,5 @@
 import { useAuth, useClerk } from '@clerk/react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-
 import { AuthBackground } from '@/components/auth/auth-background';
 import { AuthLoadingScreen } from '@/components/auth/auth-loading-screen';
 import { Button } from '@/components/ui/button';

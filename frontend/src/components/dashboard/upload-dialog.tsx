@@ -1,7 +1,6 @@
 import { Add01Icon, Delete02Icon, File01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { type DragEvent, useRef, useState } from 'react';
-
 import { Button } from '@/components/ui/button';
 import {
     Dialog,

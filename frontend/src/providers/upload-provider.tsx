@@ -1,5 +1,4 @@
 import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
-
 import { UploadDialog } from '@/components/dashboard/upload-dialog';
 import { UploadContext } from '@/contexts/upload-context';
 import { MAX_UPLOAD_SIZE_BYTES } from '@/lib/files-api';

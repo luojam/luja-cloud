@@ -9,7 +9,7 @@ import {
     type UpdateCommandOutput,
 } from '@aws-sdk/lib-dynamodb';
 import type { APIGatewayProxyHandlerV2WithJWTAuthorizer } from 'aws-lambda';
-import type { FileMetadataItem, PublicFileRecord } from './list-files';
+import type { BasePublicFileRecord, FileMetadataItem } from './list-files';
 
 export type GetFile = (input: GetCommandInput) => Promise<Pick<GetCommandOutput, 'Item'>>;
 export type UpdateFile = (
@@ -32,7 +32,7 @@ function response(statusCode: number, message: string) {
     return { statusCode, headers: responseHeaders, body: JSON.stringify({ message }) };
 }
 
-function publicFile(item: FileMetadataItem): PublicFileRecord {
+function publicFile(item: FileMetadataItem): BasePublicFileRecord {
     return {
         fileId: item.fileId,
         name: item.name,

@@ -19,6 +19,9 @@ import * as s3deployment from 'aws-cdk-lib/aws-s3-deployment';
 import { Construct } from 'constructs';
 
 const API_AUDIENCE = 'luja-cloud-api';
+const TOKEN_HASH_INDEX_NAME = 'TokenHashIndex';
+const PUBLIC_SHARE_THROTTLE_RATE = 10;
+const PUBLIC_SHARE_THROTTLE_BURST = 20;
 
 export interface LujaCloudStackProps extends cdk.StackProps {
     readonly clerkIssuer: string;
@@ -43,6 +46,12 @@ export class LujaCloudStack extends cdk.Stack {
             sortKey: { name: 'fileId', type: dynamodb.AttributeType.STRING },
             billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
             removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+
+        filesTable.addGlobalSecondaryIndex({
+            indexName: TOKEN_HASH_INDEX_NAME,
+            partitionKey: { name: 'tokenHash', type: dynamodb.AttributeType.STRING },
+            projectionType: dynamodb.ProjectionType.KEYS_ONLY,
         });
 
         const userFilesBucket = new s3.Bucket(this, 'UserFilesBucket', {
@@ -82,11 +91,14 @@ export class LujaCloudStack extends cdk.Stack {
             handler: 'handler',
             runtime: lambda.Runtime.NODEJS_22_X,
             logGroup: listFilesLogGroup,
-            environment: {
-                FILES_TABLE_NAME: filesTable.tableName,
-            },
+            environment: { FILES_TABLE_NAME: filesTable.tableName },
         });
-        filesTable.grantReadData(listFilesFunction);
+        listFilesFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['dynamodb:Query'],
+                resources: [filesTable.tableArn],
+            })
+        );
 
         const initiateUploadLogGroup = new logs.LogGroup(this, 'InitiateUploadFunctionLogs', {
             retention: logs.RetentionDays.ONE_WEEK,
@@ -146,6 +158,88 @@ export class LujaCloudStack extends cdk.Stack {
             })
         );
 
+        const enableShareLogGroup = new logs.LogGroup(this, 'EnableFileShareFunctionLogs', {
+            retention: logs.RetentionDays.ONE_WEEK,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+        const enableShareFunction = new lambdaNodejs.NodejsFunction(
+            this,
+            'EnableFileShareFunction',
+            {
+                entry: path.join(__dirname, '..', 'functions', 'enable-file-share.ts'),
+                handler: 'handler',
+                runtime: lambda.Runtime.NODEJS_22_X,
+                logGroup: enableShareLogGroup,
+                environment: { FILES_TABLE_NAME: filesTable.tableName },
+            }
+        );
+        enableShareFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
+                resources: [filesTable.tableArn],
+            })
+        );
+
+        const revokeShareLogGroup = new logs.LogGroup(this, 'RevokeFileShareFunctionLogs', {
+            retention: logs.RetentionDays.ONE_WEEK,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+        const revokeShareFunction = new lambdaNodejs.NodejsFunction(
+            this,
+            'RevokeFileShareFunction',
+            {
+                entry: path.join(__dirname, '..', 'functions', 'revoke-file-share.ts'),
+                handler: 'handler',
+                runtime: lambda.Runtime.NODEJS_22_X,
+                logGroup: revokeShareLogGroup,
+                environment: { FILES_TABLE_NAME: filesTable.tableName },
+            }
+        );
+        revokeShareFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['dynamodb:UpdateItem'],
+                resources: [filesTable.tableArn],
+            })
+        );
+
+        const resolveShareLogGroup = new logs.LogGroup(this, 'ResolveFileShareFunctionLogs', {
+            retention: logs.RetentionDays.ONE_WEEK,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+        const resolveShareFunction = new lambdaNodejs.NodejsFunction(
+            this,
+            'ResolveFileShareFunction',
+            {
+                entry: path.join(__dirname, '..', 'functions', 'resolve-file-share.ts'),
+                handler: 'handler',
+                runtime: lambda.Runtime.NODEJS_22_X,
+                logGroup: resolveShareLogGroup,
+                environment: {
+                    FILES_TABLE_NAME: filesTable.tableName,
+                    TOKEN_HASH_INDEX_NAME,
+                    FILES_BUCKET_NAME: userFilesBucket.bucketName,
+                },
+            }
+        );
+        resolveShareFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['dynamodb:GetItem'],
+                resources: [filesTable.tableArn],
+            })
+        );
+        resolveShareFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['dynamodb:Query'],
+                resources: [`${filesTable.tableArn}/index/${TOKEN_HASH_INDEX_NAME}`],
+            })
+        );
+        resolveShareFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['s3:GetObject'],
+                resources: [userFilesBucket.arnForObjects('files/*')],
+            })
+        );
+
         const renameFileLogGroup = new logs.LogGroup(this, 'RenameFileFunctionLogs', {
             retention: logs.RetentionDays.ONE_WEEK,
             removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -182,7 +276,13 @@ export class LujaCloudStack extends cdk.Stack {
         });
         deleteFileFunction.addToRolePolicy(
             new iam.PolicyStatement({
-                actions: ['dynamodb:GetItem', 'dynamodb:DeleteItem'],
+                actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
+                resources: [filesTable.tableArn],
+            })
+        );
+        deleteFileFunction.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['dynamodb:DeleteItem'],
                 resources: [filesTable.tableArn],
             })
         );
@@ -311,6 +411,44 @@ export class LujaCloudStack extends cdk.Stack {
         });
 
         api.addRoutes({
+            path: '/api/files/{id}/share',
+            methods: [apigatewayv2.HttpMethod.POST],
+            integration: new HttpLambdaIntegration(
+                'EnableFileShareIntegration',
+                enableShareFunction
+            ),
+            authorizer,
+        });
+
+        api.addRoutes({
+            path: '/api/files/{id}/share',
+            methods: [apigatewayv2.HttpMethod.DELETE],
+            integration: new HttpLambdaIntegration(
+                'RevokeFileShareIntegration',
+                revokeShareFunction
+            ),
+            authorizer,
+        });
+
+        api.addRoutes({
+            path: '/api/shares/{token}',
+            methods: [apigatewayv2.HttpMethod.GET],
+            integration: new HttpLambdaIntegration(
+                'ResolveFileShareIntegration',
+                resolveShareFunction
+            ),
+        });
+
+        api.addRoutes({
+            path: '/api/shares/{token}/download',
+            methods: [apigatewayv2.HttpMethod.POST],
+            integration: new HttpLambdaIntegration(
+                'DownloadFileShareIntegration',
+                resolveShareFunction
+            ),
+        });
+
+        api.addRoutes({
             path: '/api/files/{id}',
             methods: [apigatewayv2.HttpMethod.PATCH],
             integration: new HttpLambdaIntegration('RenameFileIntegration', renameFileFunction),
@@ -348,6 +486,17 @@ export class LujaCloudStack extends cdk.Stack {
                 responseLength: '$context.responseLength',
                 integrationError: '$context.integrationErrorMessage',
             }),
+        };
+        // RouteSettings is an untyped CloudFormation map, so its nested properties must retain
+        // their CloudFormation names rather than CDK's usual lower-camel conversion.
+        const publicShareThrottle = {
+            ThrottlingRateLimit: PUBLIC_SHARE_THROTTLE_RATE,
+            ThrottlingBurstLimit: PUBLIC_SHARE_THROTTLE_BURST,
+        };
+        // Stage throttling also applies when callers use the execute-api endpoint directly.
+        defaultStage.routeSettings = {
+            'GET /api/shares/{token}': publicShareThrottle,
+            'POST /api/shares/{token}/download': publicShareThrottle,
         };
 
         new cdk.CfnOutput(this, 'SessionApiUrl', {

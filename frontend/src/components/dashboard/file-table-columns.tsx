@@ -9,8 +9,8 @@ import {
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import type { Column, ColumnDef, RowData, SortingFn } from '@tanstack/react-table';
-
 import { FileActionsDropdown } from '@/components/dashboard/file-actions';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -35,6 +35,7 @@ declare module '@tanstack/react-table' {
         onDelete?: (files: TData[]) => void;
         onDownload?: (files: TData[]) => void;
         onRename?: (file: TData) => void;
+        onShare?: (file: TData) => void;
     }
 }
 
@@ -127,6 +128,11 @@ export const fileTableColumns: ColumnDef<FileRecord>[] = [
                         strokeWidth={1.8}
                     />
                     <span className='min-w-0 flex-1 truncate text-white'>{file.name}</span>
+                    {file.isShared && (
+                        <Badge variant='secondary' className='hidden sm:inline-flex'>
+                            Shared
+                        </Badge>
+                    )}
                 </div>
             );
         },
@@ -162,6 +168,7 @@ export const fileTableColumns: ColumnDef<FileRecord>[] = [
                 onDownload={() => table.options.meta?.onDownload?.([row.original])}
                 onOpen={() => table.resetRowSelection()}
                 onRename={() => table.options.meta?.onRename?.(row.original)}
+                onShare={() => table.options.meta?.onShare?.(row.original)}
             />
         ),
     },

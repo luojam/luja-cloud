@@ -34,21 +34,21 @@ flowchart LR
     Browser -->|Private file operations and Clerk token| API
     Browser -->|Public sharing token| API
     API --> Backend
-    Backend -->|File and share records| Metadata
+    Backend -->|File records and share hashes| Metadata
     Backend -->|Create signed URLs| Files
     Browser -->|Direct upload and download| Files
 ```
 
 ### AWS components
 
-| Component            | Responsibility                                                              |
-| -------------------- | --------------------------------------------------------------------------- |
-| S3 and CloudFront    | Host and deliver the built React application.                               |
-| Clerk                | User authentication; the backend validates Clerk session tokens.            |
-| API Gateway HTTP API | Exposes the small backend API.                                              |
-| Lambda               | Authorizes requests, manages metadata, and creates short-lived S3 URLs.     |
-| S3                   | Stores private file contents. Public access remains blocked.                |
-| DynamoDB             | Stores filenames, ownership, timestamps, upload state, and sharing records. |
+| Component            | Responsibility                                                           |
+| -------------------- | ------------------------------------------------------------------------ |
+| S3 and CloudFront    | Host and deliver the built React application.                            |
+| Clerk                | User authentication; the backend validates Clerk session tokens.         |
+| API Gateway HTTP API | Exposes the small backend API.                                           |
+| Lambda               | Authorizes requests, manages metadata, and creates short-lived S3 URLs.  |
+| S3                   | Stores private file contents. Public access remains blocked.             |
+| DynamoDB             | Stores filenames, ownership, timestamps, upload state, and share hashes. |
 
 The CDK application in `infra/` will define and deploy both the frontend hosting and backend resources. The frontend assets and user files use separate S3 buckets with separate access policies.
 
@@ -71,12 +71,13 @@ name
 mimeType
 sizeBytes
 objectKey
-status              pending | ready | cleanup (internal only)
+status              pending | ready | cleanup | deleting (internal states not public)
 createdAt
 modifiedAt
+tokenHash?          SHA-256 share-token digest; absent for private files
 ```
 
-The exact DynamoDB key design can be selected during implementation.
+The file table uses `ownerId` as its partition key and `fileId` as its sort key. This makes every private lookup owner-scoped directly from the verified Clerk `sub` claim and supports listing one owner's files without a secondary index. It uses on-demand billing and destructive removal during the current development stage.
 
 ## API route convention
 
@@ -95,7 +96,7 @@ PATCH  /api/files/{id}
 DELETE /api/files/{id}
 ```
 
-Every private operation checks that the authenticated Clerk user owns the requested file.
+Every private operation checks that the authenticated Clerk user owns the requested file. Sharing additionally uses authenticated `POST /api/files/{id}/share` and `DELETE /api/files/{id}/share`. Public guests fetch metadata with `GET /api/shares/{token}` and request a download URL with `POST /api/shares/{token}/download`.
 
 ## Upload flow
 
@@ -144,33 +145,30 @@ A signed-in owner can create an unguessable link for one file. Opening that link
 ```mermaid
 flowchart LR
     Owner[File owner] -->|Create share| API[Backend API]
-    API --> Share[(Share record)]
-    Guest[Friend or family] -->|Open random token URL| Public[Public share endpoint]
-    Public --> Share
-    Public -->|Return short-lived signed URL| Guest
+    API --> File[(File record with token hash)]
+    Guest[Friend or family] -->|Open random token URL| Metadata[Public metadata endpoint]
+    Metadata --> File
+    Metadata -->|Return file metadata| Guest
+    Guest -->|Click Download| Download[Public download endpoint]
+    Download --> File
+    Download -->|Return short-lived signed URL| Guest
     Guest -->|Download| S3[(Private S3 bucket)]
 ```
 
-A share record will conceptually contain:
+An active link is represented by an optional `tokenHash` attribute directly on its ready file item. `TokenHashIndex` is a keys-only global secondary index on the file table, partitioned by `tokenHash`. Because DynamoDB omits items without the index key, the index is sparse and contains only shared files. A file can hold only one active hash; revocation removes the attribute, and re-enabling stores a newly generated hash.
 
-```text
-shareTokenHash
-fileId
-ownerId
-createdAt
-revokedAt           optional
-```
+Tokens contain 256 bits from the platform cryptographic RNG and use unpadded base64url encoding. Only the SHA-256 hash is persisted. The raw token exists only in the enable response and guest URL and acts as the guest's permission. API and Lambda logging never includes raw request paths, tokens, hashes, records, or signed URLs. Opening a valid share returns only public file metadata. Clicking **Download** revalidates the share and returns a five-minute S3 GET URL with a sanitized attachment disposition; S3 itself remains private.
 
-Only a hash of the share token should be stored. The raw, long random token appears in the URL and acts as the guest's permission to access the file. Resolving a valid share returns a short-lived S3 download URL.
+Sharing behavior:
 
-Initial sharing behavior:
-
-- The owner toggles sharing on or off for each file.
-- Turning sharing on creates a link that does not expire automatically.
-- Turning sharing off immediately invalidates the link.
-- If sharing is enabled again later, a new token is generated so the revoked link remains invalid.
-- The S3 object always remains private, even when link sharing is enabled.
-- A deleted file invalidates its sharing link.
+- `POST /api/files/{id}/share` and `DELETE /api/files/{id}/share` are Clerk-authorized owner routes. `GET /api/shares/{token}` and `POST /api/shares/{token}/download` are public routes; both return `cache-control: no-store`. `GET /api/files` reports only an `isShared` boolean, never a token or hash.
+- Turning sharing on creates a link that does not expire automatically. A second enable while a record is active returns `409` rather than rotating it because the existing raw token cannot be recovered from its hash.
+- Enable conditionally sets `tokenHash` only while the owned file is still `ready` and has no active hash. This single-item update serializes concurrent enable and delete requests and ensures at most one request can return a newly active token.
+- Turning sharing off idempotently removes `tokenHash`. Both public operations hash the presented token, query `TokenHashIndex`, then strongly re-read the file item and compare its current hash to reject stale index results. Malformed, unknown, revoked, deleted, non-ready, and inconsistent links all return the same `404`.
+- If sharing is enabled again later, a fresh random token and hash are generated, so the revoked link remains invalid.
+- Deletion atomically moves a ready file to an internal `deleting` state and removes `tokenHash` before deleting S3 bytes and file metadata. Enable cannot commit after that claim. Request retries and the daily cleanup job finish a partially completed deletion; both list and public resolution reject `deleting` records.
+- CloudFront sends `/api/*`, including both public share operations, to API Gateway with caching disabled and forwards the token path. API Gateway applies per-route throttles to the public operations even when its generated endpoint is called directly. `/share/{token}` does not match that behavior and is rewritten to the SPA's `index.html`.
+- The S3 object always remains private, even when link sharing is enabled. Page load never issues an S3 URL. Once revocation commits, a download request whose strong validation read occurs afterward cannot issue a URL. A request validated concurrently before revocation may still finish signing, and issued URLs may continue working for up to five minutes.
 
 ## Delivery phases
 
@@ -195,9 +193,9 @@ flowchart LR
 ### Phase 2: sharing links
 
 - Create and revoke a file share
-- Optional expiry
+- No automatic expiry for the share; five-minute expiry for resolved S3 URLs
 - Public share route in the React application
-- Public API endpoint that exchanges a valid token for a short-lived download URL
+- Public metadata endpoint and an on-request endpoint that exchanges a valid token for a short-lived download URL
 
 ## Explicitly out of scope initially
 
