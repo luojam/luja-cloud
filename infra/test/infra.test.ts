@@ -461,6 +461,22 @@ test('registers and throttles unauthenticated share routes while authorizing own
             },
         },
     });
+
+    const shareRouteKeys = [
+        'GET /api/shares/{token}',
+        'POST /api/shares/{token}/download',
+    ];
+    const shareRouteIds = Object.entries(
+        template.findResources('AWS::ApiGatewayV2::Route')
+    )
+        .filter(([, route]) => shareRouteKeys.includes(route.Properties.RouteKey))
+        .map(([logicalId]) => logicalId);
+    const [stage] = Object.values(
+        template.findResources('AWS::ApiGatewayV2::Stage')
+    ) as Array<{ DependsOn?: string[] }>;
+
+    expect(shareRouteIds).toHaveLength(2);
+    expect(stage.DependsOn).toEqual(expect.arrayContaining(shareRouteIds));
 });
 
 test('grants sharing Lambdas only their required DynamoDB and S3 operations', () => {

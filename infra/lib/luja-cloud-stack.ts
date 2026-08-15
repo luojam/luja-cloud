@@ -430,7 +430,7 @@ export class LujaCloudStack extends cdk.Stack {
             authorizer,
         });
 
-        api.addRoutes({
+        const publicShareRoutes = api.addRoutes({
             path: '/api/shares/{token}',
             methods: [apigatewayv2.HttpMethod.GET],
             integration: new HttpLambdaIntegration(
@@ -439,14 +439,16 @@ export class LujaCloudStack extends cdk.Stack {
             ),
         });
 
-        api.addRoutes({
-            path: '/api/shares/{token}/download',
-            methods: [apigatewayv2.HttpMethod.POST],
-            integration: new HttpLambdaIntegration(
-                'DownloadFileShareIntegration',
-                resolveShareFunction
-            ),
-        });
+        publicShareRoutes.push(
+            ...api.addRoutes({
+                path: '/api/shares/{token}/download',
+                methods: [apigatewayv2.HttpMethod.POST],
+                integration: new HttpLambdaIntegration(
+                    'DownloadFileShareIntegration',
+                    resolveShareFunction
+                ),
+            })
+        );
 
         api.addRoutes({
             path: '/api/files/{id}',
@@ -493,6 +495,11 @@ export class LujaCloudStack extends cdk.Stack {
             ThrottlingRateLimit: PUBLIC_SHARE_THROTTLE_RATE,
             ThrottlingBurstLimit: PUBLIC_SHARE_THROTTLE_BURST,
         };
+        // CloudFormation otherwise may update the stage before these new routes exist, causing
+        // API Gateway to reject their route settings during deployment.
+        for (const route of publicShareRoutes) {
+            defaultStage.addDependency(route.node.defaultChild as apigatewayv2.CfnRoute);
+        }
         // Stage throttling also applies when callers use the execute-api endpoint directly.
         defaultStage.routeSettings = {
             'GET /api/shares/{token}': publicShareThrottle,
