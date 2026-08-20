@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Toaster } from '@/components/ui/sonner';
 import { router } from '@/router';
 
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -83,6 +84,7 @@ createRoot(document.getElementById('root')!).render(
         >
             <QueryClientProvider client={queryClient}>
                 <AppRouter />
+                <Toaster theme='dark' />
             </QueryClientProvider>
         </ClerkProvider>
     </StrictMode>

@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-table';
 import type { RowSelectionState, SortingState } from '@tanstack/react-table';
 import { useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { DeleteFilesDialog } from '@/components/dashboard/delete-files-dialog';
 import {
     DownloadFilesDialog,
@@ -76,7 +77,6 @@ export function FileList({
     const [fileToRename, setFileToRename] = useState<FileRecord | null>(null);
     const [fileToShare, setFileToShare] = useState<FileRecord | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
-    const [downloadStatus, setDownloadStatus] = useState('');
     const [preparedDownloads, setPreparedDownloads] = useState<PreparedDownload[]>([]);
     const deleteInProgress = useRef(false);
     const downloadInProgress = useRef(false);
@@ -112,12 +112,15 @@ export function FileList({
 
         downloadInProgress.current = true;
         setIsDownloading(true);
-        setDownloadStatus(
-            `Preparing ${selectedFiles.length} ${selectedFiles.length === 1 ? 'download' : 'downloads'}…`
-        );
         try {
             const result = await onDownload(selectedFiles);
             const succeeded = result.downloads.length;
+
+            if (result.failed > 0) {
+                toast.error(
+                    `${result.failed} ${result.failed === 1 ? 'file' : 'files'} could not be prepared.`
+                );
+            }
 
             if (selectedFiles.length === 1 && succeeded === 1) {
                 const anchor = document.createElement('a');
@@ -128,21 +131,11 @@ export function FileList({
                 } finally {
                     anchor.remove();
                 }
-                setDownloadStatus('Download requested.');
             } else if (succeeded > 0) {
                 setPreparedDownloads(result.downloads);
-                setDownloadStatus(
-                    result.failed === 0
-                        ? `${succeeded} ${succeeded === 1 ? 'download is' : 'downloads are'} ready.`
-                        : `${succeeded} ${succeeded === 1 ? 'download is' : 'downloads are'} ready; ${result.failed} ${result.failed === 1 ? 'file' : 'files'} could not be prepared.`
-                );
-            } else {
-                setDownloadStatus(
-                    `Unable to prepare ${result.failed} ${result.failed === 1 ? 'download' : 'downloads'}.`
-                );
             }
         } catch {
-            setDownloadStatus('Unable to prepare the download. Please try again.');
+            toast.error('Unable to prepare the download. Please try again.');
         } finally {
             downloadInProgress.current = false;
             setIsDownloading(false);
@@ -234,11 +227,6 @@ export function FileList({
                     </Button>
                 </div>
             </div>
-            {downloadStatus && (
-                <p className='text-muted-foreground text-xs' aria-live='polite'>
-                    {downloadStatus}
-                </p>
-            )}
 
             {files.length === 0 ? (
                 <Empty className='min-h-60 rounded-lg border border-solid'>
