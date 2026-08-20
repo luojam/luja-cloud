@@ -142,7 +142,7 @@ export const fileTableColumns: ColumnDef<FileRecord>[] = [
         accessorKey: 'modifiedAt',
         sortingFn: sortByModified,
         sortDescFirst: true,
-        meta: { className: 'w-[130px]' },
+        meta: { className: 'hidden w-[130px] sm:table-cell' },
         header: ({ column }) => renderSortHeader(column, 'Modified'),
         cell: ({ getValue }) => formatFileDate(getValue<string>()),
     },

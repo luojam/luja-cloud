@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils';
 const fileTableColumnClassNames = {
     select: 'w-10',
     name: 'min-w-0',
-    modifiedAt: 'w-[130px]',
+    modifiedAt: 'hidden w-[130px] sm:table-cell',
     sizeBytes: 'hidden w-[90px] text-right sm:table-cell',
     actions: 'w-10 text-right',
 } as const;
