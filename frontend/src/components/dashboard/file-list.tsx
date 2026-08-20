@@ -7,7 +7,7 @@ import {
     useReactTable,
 } from '@tanstack/react-table';
 import type { RowSelectionState, SortingState } from '@tanstack/react-table';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { DeleteFilesDialog } from '@/components/dashboard/delete-files-dialog';
 import {
@@ -76,6 +76,7 @@ export function FileList({
     const [deleteError, setDeleteError] = useState('');
     const [fileToRename, setFileToRename] = useState<FileRecord | null>(null);
     const [fileToShare, setFileToShare] = useState<FileRecord | null>(null);
+    const [sharePathsByFileId, setSharePathsByFileId] = useState<Record<string, string>>({});
     const [isDownloading, setIsDownloading] = useState(false);
     const [preparedDownloads, setPreparedDownloads] = useState<PreparedDownload[]>([]);
     const deleteInProgress = useRef(false);
@@ -106,6 +107,20 @@ export function FileList({
     const currentFileToShare = fileToShare
         ? (files.find((file) => file.fileId === fileToShare.fileId) ?? fileToShare)
         : null;
+
+    useEffect(() => {
+        const sharedFileIds = new Set(
+            files.filter((file) => file.isShared).map((file) => file.fileId)
+        );
+        setSharePathsByFileId((currentPaths) => {
+            const nextPaths = Object.fromEntries(
+                Object.entries(currentPaths).filter(([fileId]) => sharedFileIds.has(fileId))
+            );
+            return Object.keys(nextPaths).length === Object.keys(currentPaths).length
+                ? currentPaths
+                : nextPaths;
+        });
+    }, [files]);
 
     async function downloadFiles(selectedFiles: FileRecord[]) {
         if (downloadInProgress.current || !onDownload || selectedFiles.length === 0) return;
@@ -181,6 +196,24 @@ export function FileList({
         if (!fileToRename || !onRename) return;
         await onRename(fileToRename, fileName);
         setFileToRename(null);
+    }
+
+    async function createShare(file: FileRecord) {
+        const sharePath = await onCreateShare(file);
+        setSharePathsByFileId((currentPaths) => ({
+            ...currentPaths,
+            [file.fileId]: sharePath,
+        }));
+        return sharePath;
+    }
+
+    async function revokeShare(file: FileRecord) {
+        await onRevokeShare(file);
+        setSharePathsByFileId((currentPaths) => {
+            const nextPaths = { ...currentPaths };
+            delete nextPaths[file.fileId];
+            return nextPaths;
+        });
     }
 
     return (
@@ -334,11 +367,12 @@ export function FileList({
                 <ShareFileDialog
                     key={currentFileToShare.fileId}
                     file={currentFileToShare}
+                    sharePath={sharePathsByFileId[currentFileToShare.fileId] ?? null}
                     onOpenChange={(open) => {
                         if (!open) setFileToShare(null);
                     }}
-                    onCreate={onCreateShare}
-                    onRevoke={onRevokeShare}
+                    onCreate={createShare}
+                    onRevoke={revokeShare}
                 />
             )}
             {fileToRename && (

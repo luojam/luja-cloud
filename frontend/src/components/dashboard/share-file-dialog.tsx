@@ -30,6 +30,7 @@ import { ShareApiError } from '@/lib/shares-api';
 
 type ShareFileDialogProps = {
     file: FileRecord;
+    sharePath: string | null;
     onOpenChange: (open: boolean) => void;
     onCreate: (file: FileRecord) => Promise<string>;
     onRevoke: (file: FileRecord) => Promise<void>;
@@ -37,8 +38,13 @@ type ShareFileDialogProps = {
 
 type CopyStatus = 'error' | 'success' | null;
 
-export function ShareFileDialog({ file, onOpenChange, onCreate, onRevoke }: ShareFileDialogProps) {
-    const [sharePath, setSharePath] = useState<string | null>(null);
+export function ShareFileDialog({
+    file,
+    sharePath,
+    onOpenChange,
+    onCreate,
+    onRevoke,
+}: ShareFileDialogProps) {
     const isShared = file.isShared || sharePath !== null;
     const [copyStatus, setCopyStatus] = useState<CopyStatus>(null);
     const [errorMessage, setErrorMessage] = useState('');
@@ -56,8 +62,7 @@ export function ShareFileDialog({ file, onOpenChange, onCreate, onRevoke }: Shar
         setCopyStatus(null);
         setErrorMessage('');
         try {
-            const path = await onCreate(file);
-            setSharePath(path);
+            await onCreate(file);
         } catch (error) {
             setErrorMessage(
                 error instanceof ShareApiError
@@ -79,7 +84,6 @@ export function ShareFileDialog({ file, onOpenChange, onCreate, onRevoke }: Shar
         setErrorMessage('');
         try {
             await onRevoke(file);
-            setSharePath(null);
             setIsConfirmingRevoke(false);
         } catch (error) {
             setErrorMessage(
@@ -133,10 +137,10 @@ export function ShareFileDialog({ file, onOpenChange, onCreate, onRevoke }: Shar
                     {sharePath ? (
                         <Alert>
                             <HugeiconsIcon icon={Tick02Icon} strokeWidth={1.8} />
-                            <AlertTitle>Your new link is ready</AlertTitle>
+                            <AlertTitle>Your link is ready</AlertTitle>
                             <AlertDescription>
-                                Copy it now. For security, it cannot be shown again after this
-                                dialog closes.
+                                Anyone with this link can download the file until you disable
+                                sharing.
                             </AlertDescription>
                         </Alert>
                     ) : isShared ? (
