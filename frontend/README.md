@@ -1,19 +1,23 @@
-# luja Cloud Frontend
+# luja Cloud frontend
 
-React and Vite frontend for luja Cloud.
+React and Vite SPA for luja Cloud.
 
-## Setup
+## Local development
 
-Copy `.env.example` to `.env` and configure Clerk plus the local API proxy:
-
-```text
-VITE_CLERK_PUBLISHABLE_KEY=<Clerk publishable key>
-API_PROXY_TARGET=<deployed API Gateway or CloudFront origin>
+```sh
+cp .env.example .env
 ```
 
-`API_PROXY_TARGET` must be an origin such as `https://abc.execute-api.us-east-1.amazonaws.com`, without an `/api` path suffix. It is read only by Vite and proxies local `/api/*` requests; deployed requests remain same-origin through CloudFront. All browser-facing backend routes use the `/api/*` namespace.
+Configure both values in `.env`:
 
-The API authorizer requires `aud: "luja-cloud-api"`. In Clerk, customize the normal session token under **Sessions → Customize session token** to include:
+```dotenv
+VITE_CLERK_PUBLISHABLE_KEY=<Clerk publishable key>
+API_PROXY_TARGET=<API Gateway or CloudFront origin>
+```
+
+`API_PROXY_TARGET` must be an origin without an `/api` suffix, such as `https://abc.execute-api.us-east-1.amazonaws.com`. Vite proxies local `/api/*` requests to it; deployed requests use the same CloudFront origin as the frontend.
+
+In Clerk, set **Sessions → Customize session token** to include the API audience:
 
 ```json
 {
@@ -21,23 +25,20 @@ The API authorizer requires `aud: "luja-cloud-api"`. In Clerk, customize the nor
 }
 ```
 
-Sign out and back in after changing the token customization so Clerk issues a fresh session token.
-
-Install dependencies and start development:
+Sign out and back in after changing the token, then run:
 
 ```sh
 npm install
 npm run dev
 ```
 
-## Commands
+## Checks
 
 ```sh
 npm run build
 npm run typecheck
 npm run lint
-npm run format
 npm run format:check
 ```
 
-See [`../docs/architecture.md`](../docs/architecture.md) for the system architecture.
+Use `npm run format` to apply formatting. See the [architecture](../docs/architecture.md) and [deployment runbook](../infra/README.md).
