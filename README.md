@@ -3,41 +3,27 @@
 
   <h1>luja Cloud</h1>
 
-  <p><strong>A private, self-hosted file vault.</strong></p>
-  <p>Upload files from one device, retrieve them from another, and share them with secure, revocable links.</p>
+  <p><strong>Place for my files</strong></p>
+  <p>Upload, download, store and share files.</p>
 
   <p>
-    <img src="https://img.shields.io/badge/React_19-20232a?style=flat-square&logo=react&logoColor=61DAFB" alt="React 19" />
-    <img src="https://img.shields.io/badge/TypeScript-20232a?style=flat-square&logo=typescript&logoColor=3178C6" alt="TypeScript" />
-    <img src="https://img.shields.io/badge/AWS-CDK-20232a?style=flat-square&logo=amazonwebservices&logoColor=FF9900" alt="AWS CDK" />
-    <img src="https://img.shields.io/badge/Clerk-20232a?style=flat-square&logo=clerk&logoColor=6C47FF" alt="Clerk" />
+    <img src="https://img.shields.io/badge/React_19-20232a?style=flat&logo=react&logoColor=61DAFB" alt="React 19" />
+    <img src="https://img.shields.io/badge/TypeScript-20232a?style=flat&logo=typescript&logoColor=3178C6" alt="TypeScript" />
+    <img src="https://img.shields.io/badge/AWS-CDK-20232a?style=flat&logo=amazonwebservices&logoColor=FF9900" alt="AWS CDK" />
+    <img src="https://img.shields.io/badge/Clerk-20232a?style=flat&logo=clerk&logoColor=6C47FF" alt="Clerk" />
   </p>
 
   <p>
-    <a href="#features">Features</a> ·
-    <a href="#architecture">Architecture</a> ·
-    <a href="#quick-start">Quick start</a> ·
-    <a href="docs/architecture.md">Documentation</a> ·
-    <a href="infra/README.md">Deployment</a>
+    <a href="docs/architecture.md">Architecture</a> ·
+    <a href="infra/README.md">Deployment</a> ·
+    <a href="#tech-stack">Tech stack</a> ·
+    <a href="#quick-start">Quick start</a>
   </p>
 </div>
 
 ---
 
-## Features
-
-| | |
-| --- | --- |
-| 🔒 **Private by default** | Every user gets an isolated file catalog backed by private S3 storage. |
-| ⚡ **Direct transfers** | The browser uploads to and downloads from S3 with short-lived presigned URLs. |
-| 🔗 **Revocable sharing** | Create unguessable guest links without making files public, then revoke them at any time. |
-| 🗂️ **Simple file management** | Upload, sort, rename, download, share, and delete files from a responsive dashboard. |
-| ☁️ **Serverless infrastructure** | CloudFront, API Gateway, Lambda, DynamoDB, and S3 keep maintenance and idle costs low. |
-| 🧹 **Automatic cleanup** | A scheduled job removes abandoned uploads and retries interrupted deletions. |
-
 ## Architecture
-
-luja Cloud is a React single-page app backed by focused serverless operations. File bytes travel directly between the browser and S3—they never pass through API Gateway or Lambda.
 
 ```mermaid
 flowchart LR
@@ -58,16 +44,7 @@ flowchart LR
     Cleanup --> Files
 ```
 
-### Security model
-
-- Clerk JWTs protect every owner route; public access is limited to share resolution and download routes.
-- Ownership comes from the verified JWT subject, never from client-supplied data.
-- Buckets block public access and use S3-managed encryption.
-- Share tokens contain 256 bits of randomness; only their SHA-256 hashes are stored.
-- Upload and download URLs expire after five minutes.
-- Files remain private when shared—the link is a revocable bearer credential, not an S3 public URL.
-
-Read the [architecture guide](docs/architecture.md) for API routes, storage design, file flows, cleanup behavior, and current limitations.
+Read the [architecture doc](docs/architecture.md) for more details.
 
 ## Tech stack
 
@@ -110,15 +87,10 @@ Add your Clerk publishable key to `frontend/.env` and your exact Clerk issuer UR
 
 ### 3. Deploy
 
-From `infra/`, select your AWS profile and region, bootstrap CDK if needed, review the changes, and deploy:
+Make sure you have bootstrapped CDK before attempting to deploy.
 
 ```bash
 cd infra
-export AWS_PROFILE=<profile>
-export AWS_REGION=<region>
-
-aws sts get-caller-identity
-npx cdk bootstrap "aws://$(aws sts get-caller-identity --query Account --output text)/$AWS_REGION"
 npm run diff
 npm run deploy
 ```
