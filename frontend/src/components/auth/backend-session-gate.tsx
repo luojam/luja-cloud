@@ -83,6 +83,7 @@ export function BackendSessionGate({ children }: BackendSessionGateProps) {
         getTokenRef.current = getToken;
     }, [getToken]);
 
+    // biome-ignore lint/correctness/useExhaustiveDependencies: Retry attempts intentionally retrigger verification.
     useEffect(() => {
         if (!isLoaded || !isSignedIn) return;
 
@@ -108,7 +109,13 @@ export function BackendSessionGate({ children }: BackendSessionGateProps) {
             active = false;
             controller.abort();
         };
-    }, [isLoaded, isSignedIn, retryAttempt, sessionId]);
+    }, [
+        isLoaded,
+        isSignedIn,
+        // biome-ignore lint/nursery/useReactCompiler: This state intentionally retriggers verification.
+        retryAttempt,
+        sessionId,
+    ]);
 
     if (!isLoaded || !isSignedIn) return <AuthLoadingScreen />;
 

@@ -92,7 +92,7 @@ export function createRenameFileHandler({
         try {
             const item = (await getFile({ TableName: tableName, Key: key, ConsistentRead: true }))
                 .Item as FileMetadataItem | undefined;
-            if (!item || item.status !== 'ready') return response(404, 'File not found');
+            if (item?.status !== 'ready') return response(404, 'File not found');
 
             const modifiedAt = now().toISOString();
             const updated = await updateFile({

@@ -95,7 +95,7 @@ export function createEnableFileShareHandler({
                     return response(201, { sharePath: `/share/${token}` });
                 }
                 if (isConditionalFailure(error)) {
-                    return !current || current.status !== 'ready'
+                    return current?.status !== 'ready'
                         ? response(404, { message: 'File not found' })
                         : response(409, { message: 'Sharing state changed' });
                 }

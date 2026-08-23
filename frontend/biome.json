@@ -1,0 +1,81 @@
+{
+    "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
+    "files": {
+        "includes": [
+            "**",
+            "!!node_modules",
+            "!!dist",
+            "!!coverage",
+            "!!.tanstack",
+            "!!**/*.tsbuildinfo",
+            "!!src/routeTree.gen.ts",
+            "!!package-lock.json"
+        ]
+    },
+    "assist": {
+        "enabled": false
+    },
+    "formatter": {
+        "enabled": true,
+        "indentStyle": "space",
+        "indentWidth": 4,
+        "lineWidth": 100
+    },
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "preset": "recommended",
+            "a11y": {
+                "preset": "none"
+            },
+            "correctness": {
+                "useExhaustiveDependencies": "warn"
+            },
+            "nursery": {
+                "useReactCompiler": "error"
+            },
+            "style": {
+                "useComponentExportOnlyModules": {
+                    "level": "warn",
+                    "options": {
+                        "allowConstantExport": true
+                    }
+                },
+                "useErrorCause": "off",
+                "useImportType": "off"
+            },
+            "suspicious": {
+                "noArrayIndexKey": "off",
+                "noDoubleEquals": "off"
+            }
+        }
+    },
+    "javascript": {
+        "formatter": {
+            "jsxQuoteStyle": "single",
+            "quoteStyle": "single",
+            "semicolons": "always",
+            "trailingCommas": "es5"
+        }
+    },
+    "css": {
+        "formatter": {
+            "quoteStyle": "single"
+        },
+        "parser": {
+            "tailwindDirectives": true
+        }
+    },
+    "overrides": [
+        {
+            "includes": ["src/components/ui/**/*.{ts,tsx}", "src/routes/**/*.{ts,tsx}"],
+            "linter": {
+                "rules": {
+                    "style": {
+                        "useComponentExportOnlyModules": "off"
+                    }
+                }
+            }
+        }
+    ]
+}

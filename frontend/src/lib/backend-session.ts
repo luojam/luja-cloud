@@ -1,7 +1,9 @@
 export type BackendSessionFailureKind = 'authentication' | 'retryable' | 'generic';
 
 export type BackendSessionResult =
-    { ok: true } | { ok: false; kind: BackendSessionFailureKind } | { ok: false; kind: 'aborted' };
+    | { ok: true }
+    | { ok: false; kind: BackendSessionFailureKind }
+    | { ok: false; kind: 'aborted' };
 
 type GetToken = () => Promise<string | null>;
 

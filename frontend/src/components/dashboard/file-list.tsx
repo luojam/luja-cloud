@@ -82,7 +82,6 @@ export function FileList({
     const deleteInProgress = useRef(false);
     const downloadInProgress = useRef(false);
     // TanStack exposes mutable table APIs, so the React compiler safely skips this hook.
-    // eslint-disable-next-line react-hooks/incompatible-library
     const table = useReactTable({
         data: files,
         columns: fileTableColumns,

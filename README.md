@@ -153,7 +153,7 @@ luja-cloud/
 ```bash
 # Frontend
 npm --prefix frontend run typecheck
-npm --prefix frontend run lint
+npm --prefix frontend run check
 npm --prefix frontend run format:check
 npm --prefix frontend run build
 

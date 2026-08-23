@@ -133,6 +133,7 @@
 .cl-formFieldInput:-webkit-autofill,
 .cl-formFieldInput:-webkit-autofill:hover,
 .cl-formFieldInput:-webkit-autofill:focus {
+    /* biome-ignore lint/complexity/noImportantStyles: Required to override Chromium autofill styling. */
     -webkit-text-fill-color: var(--foreground) !important;
     caret-color: var(--foreground);
     transition: background-color 9999s ease-out;

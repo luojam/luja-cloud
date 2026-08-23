@@ -16,7 +16,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as customResources from 'aws-cdk-lib/custom-resources';
 import * as s3deployment from 'aws-cdk-lib/aws-s3-deployment';
-import { Construct } from 'constructs';
+import type { Construct } from 'constructs';
 
 const API_AUDIENCE = 'luja-cloud-api';
 const TOKEN_HASH_INDEX_NAME = 'TokenHashIndex';

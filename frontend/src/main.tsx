@@ -58,21 +58,30 @@ const routerPush: ClerkRouterFn = (to, metadata) => navigateWithRouter(to, false
 const routerReplace: ClerkRouterFn = (to, metadata) => navigateWithRouter(to, true, metadata);
 
 // Keep the Clerk-to-router bridge next to the application providers.
-// eslint-disable-next-line react-refresh/only-export-components
+// biome-ignore lint/style/useComponentExportOnlyModules: Keep the bridge beside the providers.
 function AppRouter() {
     const auth = useAuth();
 
+    // biome-ignore lint/correctness/useExhaustiveDependencies: Authentication changes intentionally retrigger route invalidation.
     useEffect(() => {
         if (!auth.isLoaded) return;
 
         // Re-run route guards whenever the active session changes.
         void router.invalidate();
-    }, [auth.isLoaded, auth.isSignedIn, auth.sessionId]);
+    }, [
+        auth.isLoaded,
+        // biome-ignore lint/nursery/useReactCompiler: Authentication changes intentionally retrigger invalidation.
+        auth.isSignedIn,
+        auth.sessionId,
+    ]);
 
     return <RouterProvider router={router} context={{ auth }} />;
 }
 
-createRoot(document.getElementById('root')!).render(
+const rootElement = document.getElementById('root');
+if (!rootElement) throw new Error('Missing root element.');
+
+createRoot(rootElement).render(
     <StrictMode>
         <ClerkProvider
             publishableKey={clerkPublishableKey}

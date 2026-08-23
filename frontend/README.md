@@ -37,7 +37,7 @@ npm run dev
 ```sh
 npm run build
 npm run typecheck
-npm run lint
+npm run check
 npm run format:check
 ```
 

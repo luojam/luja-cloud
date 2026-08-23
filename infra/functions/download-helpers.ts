@@ -11,6 +11,7 @@ export function attachmentDisposition(fileName: string): string {
     const visibleName =
         fileName
             .normalize('NFC')
+            // biome-ignore lint/suspicious/noControlCharactersInRegex: These ranges remove unsafe filename characters.
             .replace(/[\u0000-\u001f\u007f-\u009f\ud800-\udfff]/g, '_')
             .replace(/[\\/]/g, '_')
             .trim() || 'download';

@@ -90,8 +90,9 @@ export function createCompleteUploadHandler({
         const key = { ownerId: subject, fileId };
         let item: FileMetadataItem | undefined;
         try {
-            item = (await getFile({ TableName: tableName, Key: key, ConsistentRead: true }))
-                .Item as FileMetadataItem | undefined;
+            item = (await getFile({ TableName: tableName, Key: key, ConsistentRead: true })).Item as
+                | FileMetadataItem
+                | undefined;
         } catch {
             return response(500, 'Internal server error');
         }

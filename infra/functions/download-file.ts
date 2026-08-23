@@ -57,7 +57,7 @@ export function createDownloadFileHandler({
             ).Item as FileMetadataItem | undefined;
 
             // Missing, non-owned (which cannot match this key), and incomplete files are identical.
-            if (!item || item.status !== 'ready') {
+            if (item?.status !== 'ready') {
                 return response(404, { message: 'File not found' });
             }
 

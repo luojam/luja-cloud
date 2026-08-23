@@ -10,16 +10,20 @@
         "destroy": "npm run build && npm run build:frontend && cdk destroy --force",
         "watch": "tsc -w",
         "test": "jest",
+        "check": "biome check .",
+        "check:write": "biome check --write .",
+        "format": "biome format --write .",
+        "format:check": "biome format .",
         "cdk": "cdk"
     },
     "devDependencies": {
+        "@biomejs/biome": "^2.5.10",
         "@types/aws-lambda": "^8.10.162",
         "@types/jest": "^30",
         "@types/node": "^24.10.1",
         "aws-cdk": "2.1130.0",
         "esbuild": "^0.28.1",
         "jest": "^30",
-        "prettier": "^3.9.5",
         "ts-jest": "^29",
         "ts-node": "^10.9.2",
         "typescript": "~5.9.3"

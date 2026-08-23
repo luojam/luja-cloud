@@ -24,7 +24,6 @@ import {
 
 declare module '@tanstack/react-table' {
     // Column metadata keeps responsive widths beside the column definition.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     interface ColumnMeta<TData extends RowData, TValue> {
         className?: string;
     }

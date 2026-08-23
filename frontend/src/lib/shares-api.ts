@@ -6,7 +6,11 @@ import {
 } from '@/lib/authenticated-request';
 
 export type ShareApiFailureKind =
-    'authentication' | 'conflict' | 'generic' | 'retryable' | 'unavailable';
+    | 'authentication'
+    | 'conflict'
+    | 'generic'
+    | 'retryable'
+    | 'unavailable';
 
 export type PublicSharedFile = {
     name: string;
