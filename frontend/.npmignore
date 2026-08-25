@@ -1,16 +1,8 @@
-*.ts
-!*.d.ts
-
 # Local configuration
 .env
 .env.*
 !.env.example
 
 # Generated output
-coverage/
 dist/
 *.tsbuildinfo
-
-# CDK asset staging directory
-.cdk.staging/
-cdk.out/
